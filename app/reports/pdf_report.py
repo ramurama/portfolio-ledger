@@ -238,6 +238,7 @@ def write_pdf(
     notes: Optional[Sequence[str]] = None,
     footer_totals: Optional[Mapping[str, str]] = None,
     footer_totals_title: str = "",
+    footer_notes: Optional[Sequence[str]] = None,
 ) -> Path:
     """Render a multi-section report to `output_path`.
 
@@ -265,6 +266,14 @@ def write_pdf(
         Optional heading printed above the footer totals strip
         (e.g. ``"Family Total"``). Ignored when `footer_totals` is
         empty.
+    footer_notes:
+        Optional list of short notes rendered as the very last content
+        in the document, immediately after the footer totals (or after
+        the last section if there are no footer totals). Use this when
+        the note explains something the reader should see *next to* the
+        totals - e.g. "the total invested capital includes reinvested
+        profits". Distinct from `notes`, which sits at the top of the
+        first page.
     """
 
     if not sections:
@@ -275,7 +284,7 @@ def write_pdf(
     doc = _build_doc(output_path)
     story = _build_story(
         title, sections, source_dates, notes,
-        footer_totals, footer_totals_title,
+        footer_totals, footer_totals_title, footer_notes,
     )
     doc.build(story)
 
@@ -296,10 +305,14 @@ def _build_doc(output_path: Path) -> BaseDocTemplate:
     doc = BaseDocTemplate(
         str(output_path),
         pagesize=landscape(A4),
-        leftMargin=15 * mm,
-        rightMargin=15 * mm,
-        topMargin=15 * mm,
-        bottomMargin=18 * mm,
+        leftMargin=8 * mm,
+        rightMargin=8 * mm,
+        topMargin=8 * mm,
+        # Bottom margin is intentionally a touch deeper than the others
+        # so the centred "Page X" footer (drawn at y=6mm by
+        # `_draw_page_number`) sits below the frame with a small
+        # breathing gap, instead of crashing into the last table row.
+        bottomMargin=12 * mm,
         title="Portfolio Ledger Report",
         author="Portfolio Ledger",
     )
@@ -324,6 +337,7 @@ def _build_story(
     notes: Optional[Sequence[str]],
     footer_totals: Optional[Mapping[str, str]],
     footer_totals_title: str,
+    footer_notes: Optional[Sequence[str]],
 ) -> list:
     """Assemble the flowable story rendered into the PDF.
 
@@ -352,8 +366,25 @@ def _build_story(
         story.extend(_build_section_flowables(section))
 
     story.extend(_build_footer_totals(footer_totals, footer_totals_title))
+    story.extend(_build_footer_notes(footer_notes))
 
     return story
+
+
+def _build_footer_notes(footer_notes: Optional[Sequence[str]]) -> list:
+    """Render notes that sit directly under the totals strip.
+
+    A small spacer separates the notes from the bold totals lines so
+    the reader's eye still locks onto the totals first; the note then
+    reads as a direct annotation of those numbers.
+    """
+
+    if not footer_notes:
+        return []
+
+    flows: list = [Spacer(1, 2 * mm)]
+    flows.extend(Paragraph(f"Note: {line}", _NOTE_STYLE) for line in footer_notes)
+    return flows
 
 
 def _build_footer_totals(
@@ -559,7 +590,7 @@ def _draw_page_number(canvas, doc) -> None:
     page_text = f"Page {doc.page}"
     canvas.drawCentredString(
         doc.pagesize[0] / 2,
-        10 * mm,
+        6 * mm,
         page_text,
     )
     canvas.restoreState()

@@ -21,10 +21,12 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Iterable
+from typing import Iterable, Mapping, Optional
 
 from app.models import OpenLot
 from app.utils.decimal_utils import ZERO, safe_divide
+
+_PositionKey = tuple[str, str]
 
 
 # Used as the multiplier when converting a fraction into a percentage.
@@ -52,15 +54,23 @@ class HoldingRow:
     remaining_lots: int
 
 
-def build_current_holdings(open_lots: Iterable[OpenLot]) -> list[HoldingRow]:
+def build_current_holdings(
+    open_lots: Iterable[OpenLot],
+    cost_adjustments: Optional[Mapping[_PositionKey, Decimal]] = None,
+) -> list[HoldingRow]:
     """Aggregate open lots into one row per (account, ISIN).
 
     Lots from the same account+ISIN may have different cost-per-share
     values (different buy dates / prices) so we compute a *weighted*
     average:
 
-        avg_price = sum(remaining_shares_i * cost_per_share_i)
-                    / sum(remaining_shares_i)
+        avg_price = (sum(remaining_shares_i * cost_per_share_i)
+                     + cost_adjustment) / sum(remaining_shares_i)
+
+    The optional `cost_adjustments` map lets the FIFO engine inject
+    per-position corrections that cannot be expressed as per-lot cost
+    bases (currently used for security transfers - see
+    :class:`app.services.fifo_engine.FifoEngine` for the derivation).
 
     The portfolio percentage is then:
 
@@ -71,19 +81,27 @@ def build_current_holdings(open_lots: Iterable[OpenLot]) -> list[HoldingRow]:
     nothing invested yet).
     """
 
+    adjustments: Mapping[_PositionKey, Decimal] = cost_adjustments or {}
+
     # First pass: bucket the lots so subsequent passes work in O(N).
-    buckets: dict[tuple[str, str], list[OpenLot]] = defaultdict(list)
+    buckets: dict[_PositionKey, list[OpenLot]] = defaultdict(list)
     for lot in open_lots:
         buckets[(lot.account_name, lot.isin)].append(lot)
 
     # Second pass: per-account total invested capital. Done up-front so
     # the row-building pass can compute each row's percentage in one go.
-    account_totals = _compute_account_totals(buckets)
+    account_totals = _compute_account_totals(buckets, adjustments)
 
     # Third pass: build the rows. Each row knows its own slice of the
     # owning account's portfolio thanks to `account_totals`.
     rows = [
-        _build_row(account_name, isin, lots, account_totals[account_name])
+        _build_row(
+            account_name,
+            isin,
+            lots,
+            account_totals[account_name],
+            adjustments.get((account_name, isin), ZERO),
+        )
         for (account_name, isin), lots in buckets.items()
     ]
 
@@ -97,14 +115,18 @@ def build_current_holdings(open_lots: Iterable[OpenLot]) -> list[HoldingRow]:
 # Helpers
 # ---------------------------------------------------------------------------
 def _compute_account_totals(
-    buckets: dict[tuple[str, str], list[OpenLot]],
+    buckets: dict[_PositionKey, list[OpenLot]],
+    adjustments: Mapping[_PositionKey, Decimal],
 ) -> dict[str, Decimal]:
     """Sum invested capital per account across every (account, ISIN)."""
 
     totals: dict[str, Decimal] = defaultdict(lambda: ZERO)
-    for (account_name, _isin), lots in buckets.items():
-        totals[account_name] += sum(
+    for (account_name, isin), lots in buckets.items():
+        natural = sum(
             (lot.remaining_cost_basis for lot in lots), start=ZERO
+        )
+        totals[account_name] += natural + adjustments.get(
+            (account_name, isin), ZERO
         )
     return totals
 
@@ -114,13 +136,14 @@ def _build_row(
     isin: str,
     lots: list[OpenLot],
     account_total: Decimal,
+    cost_adjustment: Decimal,
 ) -> HoldingRow:
     """Assemble one `HoldingRow` from the lots backing a single ISIN."""
 
     total_shares = sum((lot.remaining_shares for lot in lots), start=ZERO)
     invested_amount = sum(
         (lot.remaining_cost_basis for lot in lots), start=ZERO
-    )
+    ) + cost_adjustment
     average_price = safe_divide(invested_amount, total_shares)
 
     # Multiply BEFORE dividing to preserve full Decimal precision; we

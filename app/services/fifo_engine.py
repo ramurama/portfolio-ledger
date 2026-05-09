@@ -3,9 +3,28 @@
 Algorithm
 ---------
 For every (account, ISIN) we maintain an ordered queue of `OpenLot`
-objects. Buys / Savings plans push lots onto the *back* of the queue;
-Sells consume shares from the *front*. Lots that hit zero remaining
-shares are popped off entirely.
+objects. Buys / Savings plans and inbound security transfers push lots
+onto the *back* of the queue; Sells consume shares from the *front*.
+Outbound security transfers also consume shares, but without creating
+realized-trade rows because no sale happened. Lots that hit zero
+remaining shares are popped off entirely.
+
+Security-transfer cost adjustments
+----------------------------------
+Sells reduce invested capital by the FIFO cost basis of the consumed
+lots, which is correct for taxable disposals. Security transfers are
+*not* sales though - they describe the broker repricing the same
+shares, and the user-facing rule for invested capital is:
+
+    transfer-out  -> invested -= abs(transfer_out_amount)
+    transfer-in   -> invested += abs(transfer_in_amount)
+
+Transfer-ins fall out of `_handle_acquisition` automatically because
+the new lot's cost basis equals the transfer-in amount. Transfer-outs
+need explicit help: popping a lot only reduces invested by the lot's
+own cost basis, which is generally NOT the transfer-out amount. We
+absorb the difference into a per-(account, ISIN) `cost_adjustments`
+ledger that the holdings calculator adds to the natural per-lot total.
 
 Crucially, we use `collections.deque`:
 
@@ -72,6 +91,12 @@ class FifoResult:
 
     realized_trades: list[RealizedTrade] = field(default_factory=list)
     open_lots: list[OpenLot] = field(default_factory=list)
+    # Per-(account, ISIN) cost-basis adjustment captured during security
+    # transfers. The holdings calculator adds these to the natural per-lot
+    # invested total so transfer-outs reduce invested capital by the
+    # broker-reported transfer amount rather than the FIFO cost basis of
+    # the consumed lots. See module docstring for the derivation.
+    cost_adjustments: dict[_QueueKey, Decimal] = field(default_factory=dict)
 
     @property
     def total_realized_gain(self) -> Decimal:
@@ -95,6 +120,10 @@ class FifoEngine:
         # presence when a brand-new (account, isin) pair shows up.
         self._queues: dict[_QueueKey, Deque[OpenLot]] = defaultdict(deque)
         self._realized: list[RealizedTrade] = []
+        # Captures the per-position cost adjustment described in the
+        # module docstring. Keyed identically to `_queues` so the
+        # holdings layer can join on the same composite key.
+        self._adjustments: dict[_QueueKey, Decimal] = defaultdict(lambda: ZERO)
 
     # ------------------------------------------------------------------
     # Public API
@@ -108,6 +137,11 @@ class FifoEngine:
         return FifoResult(
             realized_trades=list(self._realized),
             open_lots=self._collect_open_lots(),
+            cost_adjustments={
+                key: value
+                for key, value in self._adjustments.items()
+                if value != ZERO
+            },
         )
 
     # ------------------------------------------------------------------
@@ -120,6 +154,8 @@ class FifoEngine:
             self._handle_acquisition(tx)
         elif tx.transaction_type.is_disposal:
             self._handle_disposal(tx)
+        elif tx.transaction_type.is_security_transfer:
+            self._handle_security_transfer(tx)
         else:
             # Distribution / Tax events do not move the FIFO queue. They
             # are still useful to keep around at the parser level for
@@ -128,7 +164,7 @@ class FifoEngine:
             return
 
     # ------------------------------------------------------------------
-    # Acquisition (Buy / Savings plan)
+    # Acquisition (Buy / Savings plan / inbound security transfer)
     # ------------------------------------------------------------------
     def _handle_acquisition(self, tx: Transaction) -> None:
         """Append a new lot to the back of the queue."""
@@ -219,6 +255,73 @@ class FifoEngine:
 
             # Drop the lot once fully consumed. Using `popleft` keeps
             # the FIFO ordering invariant intact.
+            if lot.remaining_shares == ZERO:
+                queue.popleft()
+
+    # ------------------------------------------------------------------
+    # Security transfers
+    # ------------------------------------------------------------------
+    def _handle_security_transfer(self, tx: Transaction) -> None:
+        """Apply a security transfer without recording taxable proceeds."""
+
+        if tx.quantity is None or tx.quantity == ZERO:
+            logger.warning(
+                "Skipping security transfer with missing/zero quantity at %s: %s",
+                tx.date, tx,
+            )
+            return
+
+        if tx.quantity > ZERO:
+            self._handle_acquisition(tx)
+        else:
+            self._handle_transfer_out(tx)
+
+    def _handle_transfer_out(self, tx: Transaction) -> None:
+        """Consume open lots for an outbound transfer.
+
+        Net effect on invested capital: ``-abs(tx.total_amount)``. Popping
+        the lots only reduces invested by the lots' own FIFO cost basis,
+        so for every consumed share we book the difference between the
+        broker's transfer-out price and the lot's cost-per-share into the
+        per-position `cost_adjustments` ledger. The holdings layer adds
+        that ledger back into invested capital, so the displayed
+        reduction matches the broker amount one-to-one.
+        """
+
+        if tx.isin is None or tx.quantity is None:
+            logger.warning(
+                "Skipping outbound transfer with missing isin/quantity at %s: %s",
+                tx.date, tx,
+            )
+            return
+
+        transfer_shares = abs(tx.quantity)
+        transfer_amount = abs(tx.total_amount)
+        # Per-share value the broker reports for this transfer-out. Using
+        # `safe_divide` guards against the (legitimate) zero-amount case.
+        transfer_price_per_share = safe_divide(transfer_amount, transfer_shares)
+
+        queue = self._queue_for(tx)
+        key = (tx.account_name, tx.isin)
+        remaining_to_transfer = transfer_shares
+
+        while remaining_to_transfer > ZERO:
+            lot = self._peek_or_log_short_sale(queue, tx, remaining_to_transfer)
+            if lot is None:
+                return
+
+            consumed = min(lot.remaining_shares, remaining_to_transfer)
+
+            # Natural reduction = consumed * lot.cost_per_share (what the
+            # pop would do on its own). Desired reduction = consumed *
+            # transfer_price_per_share. The delta lives in the ledger.
+            natural_reduction = consumed * lot.cost_per_share
+            desired_reduction = consumed * transfer_price_per_share
+            self._adjustments[key] += natural_reduction - desired_reduction
+
+            lot.remaining_shares -= consumed
+            remaining_to_transfer -= consumed
+
             if lot.remaining_shares == ZERO:
                 queue.popleft()
 

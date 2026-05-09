@@ -44,6 +44,27 @@ def _sell(account: str, isin: str, qty: str, total: str, when: datetime) -> Tran
     )
 
 
+def _security_transfer(
+    account: str,
+    isin: str,
+    qty: str,
+    total: str,
+    when: datetime,
+) -> Transaction:
+    return Transaction(
+        account_name=account,
+        date=when,
+        isin=isin,
+        symbol=isin,
+        transaction_type=TransactionType.SECURITY_TRANSFER,
+        quantity=Decimal(qty),
+        price=abs(Decimal(total) / Decimal(qty)),
+        fees=Decimal("0"),
+        currency="EUR",
+        total_amount=Decimal(total),
+    )
+
+
 class TestFifoEngine:
     def test_simple_buy_then_full_sell(self) -> None:
         engine = FifoEngine()
@@ -134,3 +155,84 @@ class TestFifoEngine:
         ])
         assert result.realized_trades == []
         assert result.open_lots == []
+
+    def test_security_transfer_in_opens_lot(self) -> None:
+        engine = FifoEngine()
+        result = engine.process([
+            _security_transfer(
+                "ramu", "US123", "5", "600", datetime(2024, 1, 1)
+            ),
+        ])
+
+        assert result.realized_trades == []
+        assert len(result.open_lots) == 1
+        assert result.open_lots[0].remaining_shares == Decimal("5")
+        assert result.open_lots[0].cost_per_share == Decimal("120")
+        # Pure transfer-in needs no extra adjustment - the new lot's
+        # cost basis already equals the broker amount.
+        assert result.cost_adjustments == {}
+
+    def test_security_transfer_out_records_cost_adjustment(self) -> None:
+        """Transfer-out reduces invested capital by the broker amount.
+
+        Lot cost basis is 10 * $100 = $1000. Transfer-out moves 4 shares
+        at a $120 broker price ($480 total). The adjustment must absorb
+        the gap between the FIFO pop ($400) and the broker amount ($480).
+        """
+        engine = FifoEngine()
+        result = engine.process([
+            _buy("ramu", "US123", "10", "-1000", datetime(2024, 1, 1)),
+            _security_transfer(
+                "ramu", "US123", "-4", "-480", datetime(2024, 6, 1)
+            ),
+        ])
+
+        assert result.realized_trades == []
+        assert len(result.open_lots) == 1
+        assert result.open_lots[0].remaining_shares == Decimal("6")
+        # natural reduction = 4 * $100 = $400; desired = $480.
+        # adjustment = $400 - $480 = -$80.
+        assert result.cost_adjustments == {("ramu", "US123"): Decimal("-80")}
+
+        # Sanity: invested capital after the transfer equals
+        # original (1000) - transfer_out_amount (480) = 520.
+        invested = (
+            sum(
+                lot.remaining_cost_basis for lot in result.open_lots
+            )
+            + result.cost_adjustments[("ramu", "US123")]
+        )
+        assert invested == Decimal("520")
+
+    def test_security_transfer_wash_round_trip(self) -> None:
+        """Out-then-in at near-equal prices should preserve invested capital.
+
+        Mirrors the Sony Group "switch" pattern in the real exports.
+        """
+        engine = FifoEngine()
+        result = engine.process([
+            _buy("ramu", "US123", "10", "-200", datetime(2024, 1, 1)),  # avg $20
+            _security_transfer(
+                "ramu", "US123", "-10", "-300", datetime(2024, 6, 1)
+            ),  # transfer-out at $30/sh
+            _security_transfer(
+                "ramu", "US123", "10", "300", datetime(2024, 6, 2)
+            ),  # transfer-in at $30/sh
+        ])
+
+        assert result.realized_trades == []
+        # Only the transfer-in lot survives.
+        assert len(result.open_lots) == 1
+        assert result.open_lots[0].remaining_shares == Decimal("10")
+        assert result.open_lots[0].cost_per_share == Decimal("30")
+
+        # adjustment = 200 - 300 = -100.
+        assert result.cost_adjustments == {("ramu", "US123"): Decimal("-100")}
+
+        # Invested = 10*$30 lot + (-100) adjustment = $200 (the original
+        # cost basis). The wash leaves invested unchanged.
+        invested = (
+            result.open_lots[0].remaining_cost_basis
+            + result.cost_adjustments[("ramu", "US123")]
+        )
+        assert invested == Decimal("200")

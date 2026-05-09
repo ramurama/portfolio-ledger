@@ -1,12 +1,11 @@
 """Centralised configuration for the Portfolio Ledger application.
 
-All filesystem paths, decimal precision settings and report defaults
-are kept here so that the rest of the codebase never needs to perform
-ad-hoc path manipulation. Anything that might reasonably change in a
-production deployment (e.g. when running inside Docker with mounted
-volumes) lives in this single module and can be overridden via the
-PORTFOLIO_LEDGER_INPUT_DIR / PORTFOLIO_LEDGER_OUTPUT_DIR environment
-variables.
+All filesystem paths, decimal precision settings, report defaults and
+transaction-type filters are kept here so that the rest of the codebase
+never needs to read environment variables directly. Anything that might
+reasonably change in a production deployment (e.g. when running inside
+Docker with mounted volumes) lives in this single module and can be
+overridden via environment variables or the project-level `.env` file.
 """
 
 from __future__ import annotations
@@ -25,6 +24,27 @@ from typing import Final
 PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 
 
+def _load_dotenv(path: Path) -> None:
+    """Load simple KEY=VALUE pairs from `.env` without extra dependencies."""
+
+    if not path.exists():
+        return
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        if key:
+            os.environ.setdefault(key, value)
+
+
+_load_dotenv(PROJECT_ROOT / ".env")
+
+
 def _resolve_dir(env_var: str, default: Path) -> Path:
     """Resolve a directory from an environment variable or fall back.
 
@@ -34,6 +54,17 @@ def _resolve_dir(env_var: str, default: Path) -> Path:
 
     raw = os.environ.get(env_var)
     return Path(raw).expanduser().resolve() if raw else default
+
+
+def _resolve_csv_list(env_var: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    """Resolve a comma-separated environment variable into a clean tuple."""
+
+    raw = os.environ.get(env_var)
+    if not raw:
+        return default
+
+    values = tuple(item.strip() for item in raw.split(",") if item.strip())
+    return values or default
 
 
 # ---------------------------------------------------------------------------
@@ -78,3 +109,21 @@ REPORT_TIMESTAMP_FORMAT: Final[str] = "%Y-%m-%d_%H-%M-%S"
 # everything in EUR, but we keep this configurable so a future broker
 # integration that reports in a different currency can override it.
 DEFAULT_CURRENCY: Final[str] = "EUR"
+
+# ---------------------------------------------------------------------------
+# Transaction filtering
+# ---------------------------------------------------------------------------
+# Raw broker `type` values admitted during parsing. Anything not listed here
+# is ignored before it can affect FIFO, holdings or portfolio reports.
+SUPPORTED_TRANSACTION_TYPES: Final[tuple[str, ...]] = _resolve_csv_list(
+    "PORTFOLIO_LEDGER_TRANSACTION_TYPES",
+    (
+        "Buy",
+        "Sell",
+        "Savings plan",
+        "Distribution",
+        "Taxes",
+        "Tax",
+        "Security transfer",
+    ),
+)

@@ -34,6 +34,9 @@ def csv_path(tmp_path: Path) -> Path:
         # Distribution with withheld tax (synthetic Tax tx should follow)
         '2024-04-01;02:00:00;Executed;"R4";"Sanofi";Cash;Distribution;'
         'FR0000120578;;;14,79;0,00;3,05;EUR\n',
+        # Security transfer must be admitted because it affects holdings
+        '2024-04-02;02:00:00;Executed;"R4B";"Sanofi";Security;Security transfer;'
+        'FR0000120578;2;100,00;200,00;;;EUR\n',
         # Cancelled order - must be ignored
         '2024-05-01;10:00:00;Cancelled;"R5";"Apple";Security;Buy;'
         'US0378331005;5;200,00;-1000,00;0,00;0,00;EUR\n',
@@ -60,14 +63,15 @@ class TestScalableCapitalParser:
         txs = list(parser.parse(csv_path, "ramu"))
 
         # Buy + Sell (with synthetic Tax) + Savings plan + Distribution
-        # (with synthetic Tax) = 6 transactions. Cancelled and Cash
-        # Transfer rows are dropped.
+        # (with synthetic Tax) + Security transfer = 7 transactions.
+        # Cancelled and Cash Transfer rows are dropped.
         types = [tx.transaction_type for tx in txs]
         assert types.count(TransactionType.BUY) == 1
         assert types.count(TransactionType.SELL) == 1
         assert types.count(TransactionType.SAVINGS_PLAN) == 1
         assert types.count(TransactionType.DISTRIBUTION) == 1
         assert types.count(TransactionType.TAX) == 2
+        assert types.count(TransactionType.SECURITY_TRANSFER) == 1
 
     def test_decimal_parsing_uses_german_format(self, csv_path: Path) -> None:
         txs = list(ScalableCapitalParser().parse(csv_path, "ramu"))

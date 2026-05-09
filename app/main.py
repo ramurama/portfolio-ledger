@@ -153,7 +153,10 @@ def process(
     engine = FifoEngine()
     fifo_result = engine.process(ingestion.transactions)
 
-    holdings = build_current_holdings(fifo_result.open_lots)
+    holdings = build_current_holdings(
+        fifo_result.open_lots,
+        cost_adjustments=fifo_result.cost_adjustments,
+    )
     combined = build_combined_portfolio(holdings)
     currency = _detect_currency(ingestion.transactions)
 
@@ -190,7 +193,10 @@ def generate_reports(
     engine = FifoEngine()
     fifo_result = engine.process(ingestion.transactions)
 
-    holdings = build_current_holdings(fifo_result.open_lots)
+    holdings = build_current_holdings(
+        fifo_result.open_lots,
+        cost_adjustments=fifo_result.cost_adjustments,
+    )
     combined = build_combined_portfolio(holdings)
 
     payload = ReportPayload(

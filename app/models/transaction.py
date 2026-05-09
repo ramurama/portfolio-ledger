@@ -83,7 +83,9 @@ class Transaction(BaseModel):
         """Quantity with sign convention used by the FIFO engine.
 
         Buys / Savings plans are positive (they add lots), Sells are
-        negative (they consume lots). For non-trade events we return 0.
+        negative (they consume lots). Security transfers keep the broker
+        sign because transfer-ins and transfer-outs are both meaningful.
+        For non-trade events we return 0.
         """
 
         if self.quantity is None:
@@ -91,5 +93,7 @@ class Transaction(BaseModel):
         if self.transaction_type.is_disposal:
             return -self.quantity
         if self.transaction_type.is_acquisition:
+            return self.quantity
+        if self.transaction_type.is_security_transfer:
             return self.quantity
         return Decimal("0")

@@ -28,6 +28,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Iterable, Iterator, Optional
 
+from app.config import DEFAULT_CURRENCY, SUPPORTED_TRANSACTION_TYPES
 from app.models import Transaction, TransactionType
 from app.parsers.base import BrokerParser
 from app.utils.date_utils import parse_broker_datetime
@@ -42,10 +43,11 @@ logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Mapping from raw CSV `type` values to our internal enum. Anything that
-# is not in this map is intentionally dropped during ingestion.
+# Mapping from raw CSV `type` values to our internal enum. The configured
+# transaction type list in `app.config` decides which of these raw broker
+# values are admitted; anything else is intentionally dropped.
 # ---------------------------------------------------------------------------
-_TYPE_MAP: dict[str, TransactionType] = {
+_KNOWN_TYPE_MAP: dict[str, TransactionType] = {
     "Buy": TransactionType.BUY,
     "Sell": TransactionType.SELL,
     "Savings plan": TransactionType.SAVINGS_PLAN,
@@ -53,6 +55,17 @@ _TYPE_MAP: dict[str, TransactionType] = {
     "Taxes": TransactionType.TAX,
     # The CSV occasionally uses singular "Tax" too - accept both.
     "Tax": TransactionType.TAX,
+    "Security transfer": TransactionType.SECURITY_TRANSFER,
+}
+_UNKNOWN_CONFIGURED_TYPES = set(SUPPORTED_TRANSACTION_TYPES) - set(_KNOWN_TYPE_MAP)
+if _UNKNOWN_CONFIGURED_TYPES:
+    raise ValueError(
+        "Unsupported transaction type(s) configured: "
+        f"{sorted(_UNKNOWN_CONFIGURED_TYPES)}"
+    )
+_TYPE_MAP: dict[str, TransactionType] = {
+    raw_type: _KNOWN_TYPE_MAP[raw_type]
+    for raw_type in SUPPORTED_TRANSACTION_TYPES
 }
 
 # Required column headers - validated up-front to fail fast on broken exports.
@@ -215,7 +228,7 @@ class ScalableCapitalParser(BrokerParser):
         price = parse_german_decimal(row.get("price"))
         fees = parse_german_decimal_or_zero(row.get("fee"))
         amount = parse_german_decimal(row.get("amount"))
-        currency = (row.get("currency") or "EUR").strip() or "EUR"
+        currency = (row.get("currency") or DEFAULT_CURRENCY).strip() or DEFAULT_CURRENCY
         isin = (row.get("isin") or "").strip() or None
         symbol = (row.get("description") or "").strip() or None
 
@@ -226,6 +239,7 @@ class ScalableCapitalParser(BrokerParser):
             TransactionType.BUY,
             TransactionType.SELL,
             TransactionType.SAVINGS_PLAN,
+            TransactionType.SECURITY_TRANSFER,
         ):
             if quantity is None or price is None or isin is None:
                 raise ValueError(
@@ -280,7 +294,7 @@ class ScalableCapitalParser(BrokerParser):
         when = parse_broker_datetime(row["date"], row.get("time"))
         isin = (row.get("isin") or "").strip() or None
         symbol = (row.get("description") or "").strip() or None
-        currency = (row.get("currency") or "EUR").strip() or "EUR"
+        currency = (row.get("currency") or DEFAULT_CURRENCY).strip() or DEFAULT_CURRENCY
 
         return Transaction(
             account_name=account_name,

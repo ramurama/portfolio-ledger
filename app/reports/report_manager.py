@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Sequence
 
 from app.config import (
     DEFAULT_CURRENCY,
@@ -66,6 +66,15 @@ _FIFO_PDF_NOTES: tuple[str, ...] = (
 )
 
 
+# Disclaimer lines shown at the top of the Current Holdings and Combined
+# Portfolio PDFs. Both reports surface the same "Total Invested" figure,
+# so the wording is shared verbatim and the constant lives at module
+# scope to make any future tweak a single edit.
+_INVESTED_CAPITAL_PDF_NOTES: tuple[str, ...] = (
+    "The total invested capital shown includes reinvested profits.",
+)
+
+
 # Disclaimer lines shown at the top of the cost-basis transfer PDF.
 # This report exists to support broker-to-broker transfers (e.g.
 # Scalable Capital -> IBKR), so the notes spell out exactly what the
@@ -89,8 +98,9 @@ _COST_BASIS_PDF_NOTES: tuple[str, ...] = (
 # ---------------------------------------------------------------------------
 # Per-PDF column-width tables
 # ---------------------------------------------------------------------------
-# Landscape A4 with 15mm side margins gives ~267mm of usable width. Each
-# tuple below sums to <= 267mm so the table always fits without horizontal
+# Landscape A4 (297mm wide) with 8mm side margins (set in
+# `app.reports.pdf_report._build_doc`) gives ~281mm of usable width. Each
+# tuple below sums to <= 281mm so the table always fits without horizontal
 # overflow. The Symbol column is the only one that wraps, giving us room
 # for long instrument names like "iShares S&P 500 Information Technology
 # Sector (Acc)" without sacrificing the rest of the layout.
@@ -107,13 +117,13 @@ _HOLDINGS_SYMBOL_COL_INDEX: int = 2
 
 # Cost basis transfer: Account, ISIN, Symbol(wrap), AcquisitionDate,
 #                      Quantity, CostPerShare, CostBasis
-# Total = 252mm, comfortably within the 267mm landscape A4 budget.
+# Total = 252mm, comfortably within the 281mm landscape A4 budget.
 _COST_BASIS_COL_WIDTHS_MM: list[float] = [22, 28, 70, 28, 32, 38, 34]
 _COST_BASIS_SYMBOL_COL_INDEX: int = 2
 
 
-# Width budget for landscape A4 minus 30mm of margins.
-_PAGE_BUDGET_MM: float = 267.0
+# Width budget for landscape A4 minus 16mm of margins (8mm each side).
+_PAGE_BUDGET_MM: float = 281.0
 
 
 def _combined_col_widths_mm(num_accounts: int) -> list[float]:
@@ -659,6 +669,7 @@ class ReportManager:
             source_dates=_format_source_dates(source_dates),
             footer_totals=family_footer,
             footer_totals_title="Family Total",
+            footer_notes=_INVESTED_CAPITAL_PDF_NOTES,
         )
 
     # ------------------------------------------------------------------
@@ -701,6 +712,7 @@ class ReportManager:
                 len(payload.account_names),
             ),
             pdf_wrap_columns=(_COMBINED_SYMBOL_COL_INDEX,),
+            pdf_footer_notes=_INVESTED_CAPITAL_PDF_NOTES,
         )
 
     # ------------------------------------------------------------------
@@ -883,6 +895,7 @@ class ReportManager:
         source_dates: Optional[dict[str, datetime]] = None,
         pdf_col_widths_mm: Optional[list[float]] = None,
         pdf_wrap_columns: tuple[int, ...] = (),
+        pdf_footer_notes: Optional[Sequence[str]] = None,
     ) -> list[Path]:
         """Render one logical report through every requested format."""
 
@@ -911,6 +924,7 @@ class ReportManager:
                     wrap_columns=pdf_wrap_columns,
                 )],
                 source_dates=_format_source_dates(source_dates),
+                footer_notes=pdf_footer_notes,
             ))
 
         return outputs

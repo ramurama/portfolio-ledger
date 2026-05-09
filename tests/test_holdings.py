@@ -84,3 +84,27 @@ class TestBuildCurrentHoldings:
         assert by_isin["ISIN_A"].portfolio_percentage == Decimal("75")
         assert by_isin["ISIN_A"].remaining_lots == 2
         assert by_isin["ISIN_B"].portfolio_percentage == Decimal("25")
+
+    def test_cost_adjustment_changes_invested_and_average_price(self) -> None:
+        """Security-transfer adjustments must flow into invested capital."""
+        rows = build_current_holdings(
+            [
+                _lot("ramu", "ISIN_A", "Alpha", "10", "30"),   # 300 invested
+                _lot("ramu", "ISIN_B", "Bravo", "1", "100"),   # 100 invested
+            ],
+            cost_adjustments={("ramu", "ISIN_A"): Decimal("-100")},
+        )
+
+        by_isin = {r.isin: r for r in rows}
+        # Alpha: 10 shares, lot cost 300 + adjustment -100 = 200 invested.
+        assert by_isin["ISIN_A"].invested_amount == Decimal("200")
+        assert by_isin["ISIN_A"].average_purchase_price == Decimal("20")
+
+        # Account total used for percentages also reflects the adjustment:
+        # account total = 200 (Alpha) + 100 (Bravo) = 300.
+        assert by_isin["ISIN_A"].portfolio_percentage == (
+            Decimal("200") * Decimal("100") / Decimal("300")
+        )
+        assert by_isin["ISIN_B"].portfolio_percentage == (
+            Decimal("100") * Decimal("100") / Decimal("300")
+        )
