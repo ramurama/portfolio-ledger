@@ -2,7 +2,7 @@
 
 Account / person names live in the codebase exactly as they appear on
 disk (the input folder name) so all internal lookups - dict keys, CLI
-filters, FIFO queue keys - stay deterministic. For *display* purposes
+filters, tax-lot queue keys - stay deterministic. For *display* purposes
 however we want the friendlier "Capitalized" form. This module owns
 that one transformation so every report applies it consistently.
 """

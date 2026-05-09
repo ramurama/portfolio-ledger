@@ -1,8 +1,8 @@
 """Build the per-account "current holdings" view.
 
-After the FIFO engine has run, each (account, ISIN) has a list of open
-lots representing un-sold acquisition fragments. This module folds those
-open lots into one row per (account, ISIN), exposing the metrics
+After the tax-lot engine has run, each (account, ISIN) has a list of
+open lots representing un-sold acquisition fragments. This module folds
+those open lots into one row per (account, ISIN), exposing the metrics
 required by the project specification:
 
     * total shares
@@ -67,10 +67,10 @@ def build_current_holdings(
         avg_price = (sum(remaining_shares_i * cost_per_share_i)
                      + cost_adjustment) / sum(remaining_shares_i)
 
-    The optional `cost_adjustments` map lets the FIFO engine inject
+    The optional `cost_adjustments` map lets the tax-lot engine inject
     per-position corrections that cannot be expressed as per-lot cost
     bases (currently used for security transfers - see
-    :class:`app.services.fifo_engine.FifoEngine` for the derivation).
+    :class:`app.services.tax_lot_engine.TaxLotEngine` for the derivation).
 
     The portfolio percentage is then:
 

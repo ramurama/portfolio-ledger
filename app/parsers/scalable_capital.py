@@ -17,7 +17,7 @@ Notable quirks we handle:
       so we emit a synthetic `TransactionType.TAX` row whenever a
       non-zero tax is present alongside a Buy / Sell / Distribution.
     * Rows with `status != "Executed"` are ignored - cancelled or
-      pending orders must never reach FIFO.
+      pending orders must never reach the tax-lot engine.
 """
 
 from __future__ import annotations
@@ -56,6 +56,7 @@ _KNOWN_TYPE_MAP: dict[str, TransactionType] = {
     # The CSV occasionally uses singular "Tax" too - accept both.
     "Tax": TransactionType.TAX,
     "Security transfer": TransactionType.SECURITY_TRANSFER,
+    "Corporate action": TransactionType.CORPORATE_ACTION,
 }
 _UNKNOWN_CONFIGURED_TYPES = set(SUPPORTED_TRANSACTION_TYPES) - set(_KNOWN_TYPE_MAP)
 if _UNKNOWN_CONFIGURED_TYPES:
@@ -198,7 +199,7 @@ class ScalableCapitalParser(BrokerParser):
             yield transaction
 
         # Emit a synthetic Tax transaction whenever the broker withheld
-        # tax on a non-Tax row. This keeps the FIFO / realized-gains
+        # tax on a non-Tax row. This keeps the tax-lot / realized-gains
         # report clean while still capturing tax events as first-class
         # records.
         synthetic_tax = self._maybe_build_synthetic_tax(
@@ -231,10 +232,20 @@ class ScalableCapitalParser(BrokerParser):
         currency = (row.get("currency") or DEFAULT_CURRENCY).strip() or DEFAULT_CURRENCY
         isin = (row.get("isin") or "").strip() or None
         symbol = (row.get("description") or "").strip() or None
+        # Broker-side reference. Captured here so the ingestion layer
+        # can pair the two legs of an internal sub-account "switch"
+        # (whose inbound leg starts with "SWITCH-...") and elide them
+        # before the tax-lot engine consumes their shares.
+        reference = (row.get("reference") or "").strip() or None
 
         # Trade-style events must carry quantity and price - skip the
-        # row entirely if those are missing, since the FIFO engine
-        # would have nothing meaningful to do with it.
+        # row entirely if those are missing, since the tax-lot engine
+        # would have nothing meaningful to do with it. Corporate actions
+        # are also share-bearing, but they routinely report price=0 and
+        # amount=0 (the broker uses them purely to record share
+        # movements). We therefore only enforce the price/isin contract
+        # for the regular trade types and admit Corporate action rows
+        # as long as they at least have an isin and quantity.
         if tx_type in (
             TransactionType.BUY,
             TransactionType.SELL,
@@ -245,6 +256,12 @@ class ScalableCapitalParser(BrokerParser):
                 raise ValueError(
                     f"trade row missing quantity/price/isin "
                     f"(qty={quantity!r}, price={price!r}, isin={isin!r})"
+                )
+        elif tx_type is TransactionType.CORPORATE_ACTION:
+            if quantity is None or isin is None:
+                raise ValueError(
+                    f"corporate action row missing quantity/isin "
+                    f"(qty={quantity!r}, isin={isin!r})"
                 )
 
         # `amount` is mandatory for all supported types.
@@ -262,6 +279,7 @@ class ScalableCapitalParser(BrokerParser):
             fees=fees,
             currency=currency,
             total_amount=amount,
+            reference=reference,
         )
 
     # ------------------------------------------------------------------
@@ -295,6 +313,7 @@ class ScalableCapitalParser(BrokerParser):
         isin = (row.get("isin") or "").strip() or None
         symbol = (row.get("description") or "").strip() or None
         currency = (row.get("currency") or DEFAULT_CURRENCY).strip() or DEFAULT_CURRENCY
+        reference = (row.get("reference") or "").strip() or None
 
         return Transaction(
             account_name=account_name,
@@ -307,4 +326,5 @@ class ScalableCapitalParser(BrokerParser):
             fees=Decimal("0"),
             currency=currency,
             total_amount=tax_value,
+            reference=reference,
         )

@@ -4,14 +4,14 @@
 operator asks for reports. It:
 
     1. Builds the formatted header + body for each logical report
-       (FIFO, current holdings, combined portfolio).
+       (Tax Lots, current holdings, combined portfolio).
     2. Hands those to every requested renderer (CSV / Excel / PDF).
     3. Returns the list of files actually written, so the CLI can
        echo them to the operator.
 
-FIFO splitting
---------------
-The FIFO realized-gains report is split per account:
+Tax Lots splitting
+------------------
+The Tax Lots realized-gains report is split per account:
 
     * Excel - one sheet per account.
     * PDF   - one page per account.
@@ -54,10 +54,10 @@ from app.utils.text import display_account_name
 logger = get_logger(__name__)
 
 
-# Disclaimer lines shown at the top of the FIFO PDF report. Kept at
-# module scope so they live next to the column header naming so a
+# Disclaimer lines shown at the top of the Tax Lots PDF report. Kept
+# at module scope so they live next to the column header naming so a
 # future change here is impossible to forget.
-_FIFO_PDF_NOTES: tuple[str, ...] = (
+_TAX_LOTS_PDF_NOTES: tuple[str, ...] = (
     "Realized Gain/Loss is reported PRE-TAX - i.e. gross of any "
     "withholding tax (Abgeltungsteuer / Solidaritätszuschlag) deducted "
     "by the broker at the point of sale.",
@@ -81,7 +81,7 @@ _INVESTED_CAPITAL_PDF_NOTES: tuple[str, ...] = (
 # operator should enter on the receiving broker's intake form and how
 # the per-share figure was derived.
 _COST_BASIS_PDF_NOTES: tuple[str, ...] = (
-    "One row per still-open FIFO lot. Lots are NOT aggregated by ISIN: "
+    "One row per still-open tax lot. Lots are NOT aggregated by ISIN: "
     "for IBKR-style cost-basis transfers the receiving broker needs the "
     "purchase price of EACH lot separately so future sells can be tax-"
     "matched correctly.",
@@ -105,10 +105,10 @@ _COST_BASIS_PDF_NOTES: tuple[str, ...] = (
 # for long instrument names like "iShares S&P 500 Information Technology
 # Sector (Acc)" without sacrificing the rest of the layout.
 
-# FIFO: Account, ISIN, Symbol(wrap), BuyDate, SellDate, SharesSold,
-#       AcquisitionCost, SaleProceeds, RealizedGain
-_FIFO_COL_WIDTHS_MM: list[float] = [18, 25, 60, 22, 22, 22, 26, 26, 38]
-_FIFO_SYMBOL_COL_INDEX: int = 2
+# Tax Lots: Account, ISIN, Symbol(wrap), BuyDate, SellDate, SharesSold,
+#           AcquisitionCost, SaleProceeds, RealizedGain
+_TAX_LOTS_COL_WIDTHS_MM: list[float] = [18, 25, 60, 22, 22, 22, 26, 26, 38]
+_TAX_LOTS_SYMBOL_COL_INDEX: int = 2
 
 # Holdings: Account, ISIN, Symbol(wrap), TotalShares, AvgPrice,
 #           InvestedAmount, %
@@ -200,7 +200,7 @@ class ReportPayload:
     holdings: list[HoldingRow] = field(default_factory=list)
     combined_portfolio: list[CombinedHoldingRow] = field(default_factory=list)
     # Per-lot rows for the IBKR-style cost-basis transfer report. Built
-    # from `FifoResult.open_lots` via `build_cost_basis_rows`.
+    # from `TaxLotResult.open_lots` via `build_cost_basis_rows`.
     cost_basis: list[CostBasisRow] = field(default_factory=list)
     account_names: list[str] = field(default_factory=list)
     # account_name -> datetime extracted from the input file used. PDF
@@ -252,7 +252,7 @@ class ReportManager:
         )
 
         written: list[Path] = []
-        written.extend(self._write_fifo(payload, formats, stamp))
+        written.extend(self._write_tax_lots(payload, formats, stamp))
         written.extend(self._write_holdings(payload, formats, stamp))
         written.extend(self._write_combined(payload, formats, stamp))
 
@@ -290,9 +290,9 @@ class ReportManager:
         return written
 
     # ------------------------------------------------------------------
-    # FIFO (split per account)
+    # Tax Lots (split per account)
     # ------------------------------------------------------------------
-    def _write_fifo(
+    def _write_tax_lots(
         self,
         payload: ReportPayload,
         formats: list[ReportFormat],
@@ -305,22 +305,22 @@ class ReportManager:
             payload.realized_trades, payload.account_names,
         )
 
-        base_filename = f"fifo_report_{stamp}"
-        title = "FIFO Realized Gains Report"
+        base_filename = f"tax_lots_report_{stamp}"
+        title = "Tax Lots Realized Gains Report"
         outputs: list[Path] = []
 
         if ReportFormat.CSV in formats:
-            outputs.append(self._write_fifo_csv(
+            outputs.append(self._write_tax_lots_csv(
                 per_account, base_filename, payload.currency,
             ))
 
         if ReportFormat.EXCEL in formats:
-            outputs.append(self._write_fifo_excel(
+            outputs.append(self._write_tax_lots_excel(
                 per_account, base_filename, payload.currency,
             ))
 
         if ReportFormat.PDF in formats:
-            outputs.append(self._write_fifo_pdf(
+            outputs.append(self._write_tax_lots_pdf(
                 per_account,
                 base_filename,
                 title,
@@ -351,7 +351,7 @@ class ReportManager:
 
         # Sort within each bucket by (buy_date, sell_date, isin).
         for account, account_trades in buckets.items():
-            buckets[account] = schema.sort_fifo_trades(account_trades)
+            buckets[account] = schema.sort_tax_lots_trades(account_trades)
 
         ordered: list[tuple[str, list[RealizedTrade]]] = []
         seen: set[str] = set()
@@ -366,8 +366,8 @@ class ReportManager:
 
         return ordered
 
-    # ----- Per-format FIFO writers -----------------------------------
-    def _write_fifo_csv(
+    # ----- Per-format Tax Lots writers --------------------------------
+    def _write_tax_lots_csv(
         self,
         per_account: list[tuple[str, list[RealizedTrade]]],
         base_filename: str,
@@ -383,15 +383,15 @@ class ReportManager:
 
         body: list[list[str]] = []
         for _account, trades in per_account:
-            body.extend(schema.fifo_rows(trades, currency))
+            body.extend(schema.tax_lots_rows(trades, currency))
 
         return write_csv(
             self.csv_dir / f"{base_filename}.csv",
-            schema.FIFO_HEADERS,
+            schema.TAX_LOTS_HEADERS,
             body,
         )
 
-    def _write_fifo_excel(
+    def _write_tax_lots_excel(
         self,
         per_account: list[tuple[str, list[RealizedTrade]]],
         base_filename: str,
@@ -402,19 +402,19 @@ class ReportManager:
         sections = [
             ExcelSection(
                 sheet_name=display_account_name(account) or "Unknown",
-                headers=schema.FIFO_HEADERS,
-                body=schema.fifo_rows(trades, currency),
+                headers=schema.TAX_LOTS_HEADERS,
+                body=schema.tax_lots_rows(trades, currency),
             )
             for account, trades in per_account
         ]
         # `write_excel` requires at least one section - ingestion
         # guarantees at least one account folder, but be explicit.
         if not sections:
-            sections = [ExcelSection("FIFO", schema.FIFO_HEADERS, [])]
+            sections = [ExcelSection("Tax Lots", schema.TAX_LOTS_HEADERS, [])]
 
         return write_excel(self.excel_dir / f"{base_filename}.xlsx", sections)
 
-    def _write_fifo_pdf(
+    def _write_tax_lots_pdf(
         self,
         per_account: list[tuple[str, list[RealizedTrade]]],
         base_filename: str,
@@ -422,15 +422,15 @@ class ReportManager:
         source_dates: dict[str, datetime],
         currency: str,
     ) -> Path:
-        """One page per account, with a per-account totals strip.
+        """One page per account, with account and report totals.
 
-        The PDF uses `schema.fifo_pdf_headers()` instead of the canonical
-        `FIFO_HEADERS` so the bold "(Pre-Tax)" qualifier doesn't crowd
-        the column header. The disclaimer is conveyed via the notes
-        band on the first page (see `_FIFO_PDF_NOTES`).
+        The PDF uses `schema.tax_lots_pdf_headers()` instead of the
+        canonical `TAX_LOTS_HEADERS` so the bold "(Pre-Tax)" qualifier
+        doesn't crowd the column header. The disclaimer is conveyed via
+        the notes band on the first page (see `_TAX_LOTS_PDF_NOTES`).
         """
 
-        pdf_headers = schema.fifo_pdf_headers()
+        pdf_headers = schema.tax_lots_pdf_headers()
 
         sections: list[PdfSection] = []
         for account, trades in per_account:
@@ -442,17 +442,17 @@ class ReportManager:
                 PdfSection(
                     subtitle=f"Account: {display_account_name(account)}",
                     headers=pdf_headers,
-                    body=schema.fifo_rows(trades, currency),
+                    body=schema.tax_lots_rows(trades, currency),
                     totals={
-                        "Realized Trades": str(len(trades)),
+                        "Account Realized Trades": str(len(trades)),
                         # Header in the notes band already says the
                         # gain figure is pre-tax, so drop the qualifier
                         # from the totals label too for a clean look.
-                        "Realized Gain/Loss":
+                        "Account Realized Gain/Loss":
                             format_money(total_gain, currency),
                     },
-                    col_widths_mm=_FIFO_COL_WIDTHS_MM,
-                    wrap_columns=(_FIFO_SYMBOL_COL_INDEX,),
+                    col_widths_mm=_TAX_LOTS_COL_WIDTHS_MM,
+                    wrap_columns=(_TAX_LOTS_SYMBOL_COL_INDEX,),
                 )
             )
 
@@ -461,8 +461,8 @@ class ReportManager:
                 PdfSection(
                     headers=pdf_headers,
                     body=[],
-                    col_widths_mm=_FIFO_COL_WIDTHS_MM,
-                    wrap_columns=(_FIFO_SYMBOL_COL_INDEX,),
+                    col_widths_mm=_TAX_LOTS_COL_WIDTHS_MM,
+                    wrap_columns=(_TAX_LOTS_SYMBOL_COL_INDEX,),
                 )
             ]
 
@@ -471,7 +471,24 @@ class ReportManager:
             title=title,
             sections=sections,
             source_dates=_format_source_dates(source_dates),
-            notes=_FIFO_PDF_NOTES,
+            notes=_TAX_LOTS_PDF_NOTES,
+            footer_totals={
+                "Total Realized Trades": str(
+                    sum(len(trades) for _account, trades in per_account)
+                ),
+                "Total Realized Gain/Loss": format_money(
+                    sum(
+                        (
+                            trade.realized_gain_loss
+                            for _account, trades in per_account
+                            for trade in trades
+                        ),
+                        start=ZERO,
+                    ),
+                    currency,
+                ),
+            },
+            footer_totals_title="Tax Lots Total",
         )
 
     # ------------------------------------------------------------------
@@ -485,8 +502,8 @@ class ReportManager:
         stamp: str,
     ) -> list[Path]:
         # Bucket holdings per account using the same ordering rules as
-        # FIFO so every output format renders accounts in identical
-        # order across the three reports.
+        # the Tax Lots report so every output format renders accounts in
+        # identical order across the three reports.
         per_account = self._group_holdings_by_account(
             payload.holdings, payload.account_names,
         )
@@ -539,7 +556,7 @@ class ReportManager:
         """Bucket holdings per account in `ordered_account_names` order.
 
         Mirrors `_group_trades_by_account` so the per-account split
-        renders identically across FIFO and Holdings:
+        renders identically across Tax Lots and Holdings:
 
             * Accounts that exist in the input but have zero holdings
               are still represented (with an empty list) so the report

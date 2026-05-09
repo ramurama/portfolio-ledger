@@ -13,7 +13,7 @@ Latest-file selection
 ---------------------
 Scalable Capital exports are *cumulative* - every export contains the
 full history up to and including the export date. Processing several
-exports therefore double-counts transactions and corrupts FIFO output.
+exports therefore double-counts transactions and corrupts tax-lot output.
 
 To avoid that, the ingestion service keeps **only the newest export
 per account folder**. "Newest" is read from the `YYYY-MM-DD` prefix in
@@ -40,6 +40,7 @@ from typing import Iterable, Optional
 from app.config import INPUT_DIR
 from app.models import Transaction
 from app.parsers import detect_parser
+from app.services.transfer_pairs import collapse_switch_pairs
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -113,7 +114,7 @@ class IngestionResult:
     """Summary of an ingestion pass.
 
     `transactions` is sorted chronologically and is the only field the
-    FIFO engine cares about. The other fields exist so the CLI can
+    tax-lot engine cares about. The other fields exist so the CLI can
     print a useful summary and so tests can assert on file coverage.
     """
 
@@ -170,17 +171,29 @@ def ingest_input_directory(
             f"Account folder {account_filter!r} not found in {base}"
         )
 
-    # Chronological order is a precondition of the FIFO engine. We sort
-    # here once so the engine can stay simple.
+    # Chronological order is a precondition of the tax-lot engine. We
+    # sort here once so the engine can stay simple.
     result.transactions.sort(key=lambda tx: tx.date)
+
+    # Drop paired Security transfer legs that represent a broker-internal
+    # sub-account "switch". They preserve the original tax lots at the
+    # broker, so the tax-lot engine must never observe them - otherwise
+    # the cheap historical lots would be popped and replaced with a
+    # single expensive lot at the inbound day's price, corrupting every
+    # subsequent realized-gain calculation. See `transfer_pairs` for
+    # the detection rule.
+    before = len(result.transactions)
+    result.transactions = collapse_switch_pairs(result.transactions)
+    collapsed = before - len(result.transactions)
 
     logger.info(
         "Ingested %d transactions from %d account(s); processed %d file(s), "
-        "skipped %d file(s).",
+        "skipped %d file(s); collapsed %d switch-pair leg(s).",
         len(result.transactions),
         len(result.accounts),
         len(result.files_processed),
         len(result.files_skipped),
+        collapsed,
     )
     return result
 

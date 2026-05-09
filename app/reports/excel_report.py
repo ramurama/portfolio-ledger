@@ -4,7 +4,7 @@ The renderer supports two modes through a single entry-point:
 
     * Single-section reports (e.g. Current Holdings) - pass one
       `ExcelSection` and the workbook gets one sheet.
-    * Multi-section reports (e.g. per-account FIFO) - pass several
+    * Multi-section reports (e.g. per-account Tax Lots) - pass several
       `ExcelSection` objects and each lands on its own sheet.
 
 Each sheet has the same quality-of-life touches:
@@ -55,7 +55,7 @@ def write_excel(
 
     `sections` must contain at least one entry. Empty sections still
     produce a sheet with the headers - this matters for per-account
-    FIFO reports where an account may legitimately have zero trades.
+    Tax Lots reports where an account may legitimately have zero trades.
     """
 
     if not sections:

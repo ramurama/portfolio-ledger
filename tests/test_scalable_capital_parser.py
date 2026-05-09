@@ -90,3 +90,15 @@ class TestScalableCapitalParser:
     def test_account_name_is_propagated(self, csv_path: Path) -> None:
         txs = list(ScalableCapitalParser().parse(csv_path, "ramu"))
         assert all(tx.account_name == "ramu" for tx in txs)
+
+    def test_reference_is_captured(self, csv_path: Path) -> None:
+        """The broker reference column must travel through the parser
+        so the ingestion layer can pair `SWITCH-...` legs with their
+        outbound counterpart."""
+        txs = list(ScalableCapitalParser().parse(csv_path, "ramu"))
+        buy = next(tx for tx in txs if tx.transaction_type == TransactionType.BUY)
+        assert buy.reference == "R1"
+        # Synthetic Tax rows derived from the broker's tax column also
+        # inherit the original row's reference - useful when auditing.
+        taxes = [tx for tx in txs if tx.transaction_type == TransactionType.TAX]
+        assert all(t.reference in {"R2", "R4"} for t in taxes)

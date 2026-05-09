@@ -5,8 +5,8 @@ Top-level package for the Scalable Capital portfolio ledger tool.
 The package is organized into four cooperating layers:
 
     parsers/   - Raw broker file -> normalized `Transaction` objects.
-    services/  - Pure business logic (ingestion, FIFO engine, holdings,
-                 combined portfolio aggregation).
+    services/  - Pure business logic (ingestion, tax-lot engine,
+                 holdings, combined portfolio aggregation).
     reports/   - Format-specific renderers (CSV, Excel, PDF) plus a
                  thin orchestrator that fans the same in-memory model
                  out to every requested format.

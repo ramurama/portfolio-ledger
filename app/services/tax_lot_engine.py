@@ -1,17 +1,20 @@
-"""FIFO tax-lot engine.
+"""Tax-lot accounting engine.
 
 Algorithm
 ---------
 For every (account, ISIN) we maintain an ordered queue of `OpenLot`
-objects. Buys / Savings plans and inbound security transfers push lots
-onto the *back* of the queue; Sells consume shares from the *front*.
+objects representing the still-held tax lots. Buys / Savings plans and
+inbound security transfers push new lots onto the *back* of the queue;
+Sells consume shares from the *front* (oldest tax lot first - the
+classic FIFO matching policy used by most German brokers and
+acceptable to the Finanzamt for `Abgeltungsteuer` calculations).
 Outbound security transfers also consume shares, but without creating
 realized-trade rows because no sale happened. Lots that hit zero
 remaining shares are popped off entirely.
 
 Security-transfer cost adjustments
 ----------------------------------
-Sells reduce invested capital by the FIFO cost basis of the consumed
+Sells reduce invested capital by the cost basis of the consumed tax
 lots, which is correct for taxable disposals. Security transfers are
 *not* sales though - they describe the broker repricing the same
 shares, and the user-facing rule for invested capital is:
@@ -21,7 +24,7 @@ shares, and the user-facing rule for invested capital is:
 
 Transfer-ins fall out of `_handle_acquisition` automatically because
 the new lot's cost basis equals the transfer-in amount. Transfer-outs
-need explicit help: popping a lot only reduces invested by the lot's
+need explicit help: popping a lot only reduces invested by that lot's
 own cost basis, which is generally NOT the transfer-out amount. We
 absorb the difference into a per-(account, ISIN) `cost_adjustments`
 ledger that the holdings calculator adds to the natural per-lot total.
@@ -63,8 +66,8 @@ to change is the column header / disclaimer.
 Partial lot consumption
 -----------------------
 A single Sell transaction can match multiple buy lots. We yield one
-`RealizedTrade` per matched buy fragment so the FIFO report shows the
-exact buy/sell mapping that was actually used.
+`RealizedTrade` per matched buy fragment so the Tax Lots report shows
+the exact buy/sell mapping that was actually used.
 """
 
 from __future__ import annotations
@@ -81,21 +84,21 @@ from app.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-# Composite key: (account_name, ISIN). One FIFO queue per pair.
+# Composite key: (account_name, ISIN). One tax-lot queue per pair.
 _QueueKey = tuple[str, str]
 
 
 @dataclass
-class FifoResult:
-    """Aggregated outcome of running the FIFO engine over a stream."""
+class TaxLotResult:
+    """Aggregated outcome of running the tax-lot engine over a stream."""
 
     realized_trades: list[RealizedTrade] = field(default_factory=list)
     open_lots: list[OpenLot] = field(default_factory=list)
     # Per-(account, ISIN) cost-basis adjustment captured during security
     # transfers. The holdings calculator adds these to the natural per-lot
     # invested total so transfer-outs reduce invested capital by the
-    # broker-reported transfer amount rather than the FIFO cost basis of
-    # the consumed lots. See module docstring for the derivation.
+    # broker-reported transfer amount rather than the cost basis of the
+    # consumed tax lots. See module docstring for the derivation.
     cost_adjustments: dict[_QueueKey, Decimal] = field(default_factory=dict)
 
     @property
@@ -107,8 +110,8 @@ class FifoResult:
         )
 
 
-class FifoEngine:
-    """Stateful FIFO calculator.
+class TaxLotEngine:
+    """Stateful tax-lot calculator.
 
     Designed for one-shot use: feed it a chronological iterable of
     `Transaction`s via :meth:`process` and read the aggregated result
@@ -128,13 +131,13 @@ class FifoEngine:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-    def process(self, transactions: Iterable[Transaction]) -> FifoResult:
+    def process(self, transactions: Iterable[Transaction]) -> TaxLotResult:
         """Apply every transaction in order and return the result."""
 
         for tx in transactions:
             self._dispatch(tx)
 
-        return FifoResult(
+        return TaxLotResult(
             realized_trades=list(self._realized),
             open_lots=self._collect_open_lots(),
             cost_adjustments={
@@ -156,18 +159,20 @@ class FifoEngine:
             self._handle_disposal(tx)
         elif tx.transaction_type.is_security_transfer:
             self._handle_security_transfer(tx)
+        elif tx.transaction_type.is_corporate_action:
+            self._handle_corporate_action(tx)
         else:
-            # Distribution / Tax events do not move the FIFO queue. They
-            # are still useful to keep around at the parser level for
-            # other reports (dividend totals, withheld tax) so we just
-            # ignore them silently here.
+            # Distribution / Tax events do not move the tax-lot queue.
+            # They are still useful to keep around at the parser level
+            # for other reports (dividend totals, withheld tax) so we
+            # just ignore them silently here.
             return
 
     # ------------------------------------------------------------------
     # Acquisition (Buy / Savings plan / inbound security transfer)
     # ------------------------------------------------------------------
     def _handle_acquisition(self, tx: Transaction) -> None:
-        """Append a new lot to the back of the queue."""
+        """Append a new tax lot to the back of the queue."""
 
         if tx.isin is None or tx.quantity is None or tx.quantity <= 0:
             logger.warning(
@@ -181,7 +186,7 @@ class FifoEngine:
         # (negative for cash outflow) does not flip cost into credit.
         # Buy-side fees are reported separately by the parser and are
         # intentionally NOT folded into cost basis - this keeps the
-        # FIFO math symmetric with the Sell side and easy to audit.
+        # tax-lot math symmetric with the Sell side and easy to audit.
         cost_per_share = safe_divide(abs(tx.total_amount), tx.quantity)
 
         lot = OpenLot(
@@ -199,10 +204,10 @@ class FifoEngine:
     # Disposal (Sell)
     # ------------------------------------------------------------------
     def _handle_disposal(self, tx: Transaction) -> None:
-        """Match a Sell against the oldest open lots.
+        """Match a Sell against the oldest open tax lots.
 
         Emits one `RealizedTrade` per consumed lot fragment so partial
-        consumption is visible in the FIFO report.
+        consumption is visible in the Tax Lots report.
         """
 
         if tx.isin is None or tx.quantity is None or tx.quantity <= 0:
@@ -254,7 +259,7 @@ class FifoEngine:
             remaining_to_sell -= consumed
 
             # Drop the lot once fully consumed. Using `popleft` keeps
-            # the FIFO ordering invariant intact.
+            # the oldest-first ordering invariant intact.
             if lot.remaining_shares == ZERO:
                 queue.popleft()
 
@@ -277,14 +282,14 @@ class FifoEngine:
             self._handle_transfer_out(tx)
 
     def _handle_transfer_out(self, tx: Transaction) -> None:
-        """Consume open lots for an outbound transfer.
+        """Consume open tax lots for an outbound transfer.
 
         Net effect on invested capital: ``-abs(tx.total_amount)``. Popping
-        the lots only reduces invested by the lots' own FIFO cost basis,
-        so for every consumed share we book the difference between the
-        broker's transfer-out price and the lot's cost-per-share into the
-        per-position `cost_adjustments` ledger. The holdings layer adds
-        that ledger back into invested capital, so the displayed
+        the lots only reduces invested by the lots' own cost basis, so
+        for every consumed share we book the difference between the
+        broker's transfer-out price and the lot's cost-per-share into
+        the per-position `cost_adjustments` ledger. The holdings layer
+        adds that ledger back into invested capital, so the displayed
         reduction matches the broker amount one-to-one.
         """
 
@@ -326,10 +331,53 @@ class FifoEngine:
                 queue.popleft()
 
     # ------------------------------------------------------------------
+    # Corporate actions
+    # ------------------------------------------------------------------
+    def _handle_corporate_action(self, tx: Transaction) -> None:
+        """Apply a broker-reported corporate action to the tax-lot queue.
+
+        Modelled with deliberately simple semantics (see
+        :class:`TransactionType.is_corporate_action` for the rationale):
+
+            * ``+qty`` rows are admitted as **zero cost basis**
+              acquisitions. The broker reports ``price=0`` and
+              ``amount=0`` on every corporate action row in the
+              Scalable Capital export, which already drives
+              :meth:`_handle_acquisition` to a per-share cost of zero -
+              so we can simply route through that handler.
+            * ``-qty`` rows (the broker reducing a parent position when
+              shares are converted into a successor security) are
+              ignored. The original parent lots stay in the queue;
+              accuracy is traded for full automation.
+            * ``qty=0`` / ``qty is None`` rows are ignored defensively.
+        """
+
+        if tx.quantity is None or tx.quantity == ZERO:
+            logger.debug(
+                "Skipping corporate action with zero/missing quantity "
+                "at %s: %s",
+                tx.date, tx,
+            )
+            return
+
+        if tx.quantity > ZERO:
+            self._handle_acquisition(tx)
+            return
+
+        # Negative quantity - intentionally a no-op. Logged at info so
+        # the operator can correlate ignored deductions with surviving
+        # parent lots when auditing.
+        logger.info(
+            "Ignoring corporate action deduction: account=%s isin=%s qty=%s "
+            "(parent cost basis preserved)",
+            tx.account_name, tx.isin, tx.quantity,
+        )
+
+    # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
     def _queue_for(self, tx: Transaction) -> Deque[OpenLot]:
-        """Return the lot queue for the (account, ISIN) of `tx`."""
+        """Return the tax-lot queue for the (account, ISIN) of `tx`."""
         # ISIN nullability is enforced by the dispatch handlers above,
         # so the type ignore is safe here.
         return self._queues[(tx.account_name, tx.isin)]  # type: ignore[index]

@@ -2,11 +2,12 @@
 
 Two commands are exposed:
 
-    process            Parse + run the FIFO engine and print a summary.
-                       Useful as a smoke test before generating reports.
+    process            Parse + run the tax-lot engine and print a
+                       summary. Useful as a smoke test before generating
+                       reports.
 
-    generate-reports   Parse + FIFO + write reports in the chosen
-                       format(s) to `output/`.
+    generate-reports   Parse + tax-lot match + write reports in the
+                       chosen format(s) to `output/`.
 
 Both commands share an `--account` filter and a `--input-dir` override
 so the tool integrates cleanly with non-default deployments (e.g. the
@@ -25,7 +26,7 @@ from app.config import DEFAULT_CURRENCY, INPUT_DIR
 from app.models import Transaction
 from app.reports import ReportFormat, ReportManager, ReportPayload
 from app.services import (
-    FifoEngine,
+    TaxLotEngine,
     build_combined_portfolio,
     build_cost_basis_rows,
     build_current_holdings,
@@ -141,7 +142,7 @@ def process(
     input_dir: Optional[Path] = InputDirOption,
     verbose: bool = VerboseOption,
 ) -> None:
-    """Parse transactions and run the FIFO engine, then print a summary."""
+    """Parse transactions and run the tax-lot engine, then print a summary."""
 
     configure_logging(verbose=verbose)
 
@@ -150,12 +151,12 @@ def process(
         account_filter=account,
     )
 
-    engine = FifoEngine()
-    fifo_result = engine.process(ingestion.transactions)
+    engine = TaxLotEngine()
+    tax_lot_result = engine.process(ingestion.transactions)
 
     holdings = build_current_holdings(
-        fifo_result.open_lots,
-        cost_adjustments=fifo_result.cost_adjustments,
+        tax_lot_result.open_lots,
+        cost_adjustments=tax_lot_result.cost_adjustments,
     )
     combined = build_combined_portfolio(holdings)
     currency = _detect_currency(ingestion.transactions)
@@ -163,8 +164,8 @@ def process(
     _print_summary(
         accounts=ingestion.accounts,
         n_transactions=len(ingestion.transactions),
-        n_realized=len(fifo_result.realized_trades),
-        total_realized=fifo_result.total_realized_gain,
+        n_realized=len(tax_lot_result.realized_trades),
+        total_realized=tax_lot_result.total_realized_gain,
         currency=currency,
         n_holdings=len(holdings),
         n_combined=len(combined),
@@ -190,17 +191,17 @@ def generate_reports(
         account_filter=account,
     )
 
-    engine = FifoEngine()
-    fifo_result = engine.process(ingestion.transactions)
+    engine = TaxLotEngine()
+    tax_lot_result = engine.process(ingestion.transactions)
 
     holdings = build_current_holdings(
-        fifo_result.open_lots,
-        cost_adjustments=fifo_result.cost_adjustments,
+        tax_lot_result.open_lots,
+        cost_adjustments=tax_lot_result.cost_adjustments,
     )
     combined = build_combined_portfolio(holdings)
 
     payload = ReportPayload(
-        realized_trades=fifo_result.realized_trades,
+        realized_trades=tax_lot_result.realized_trades,
         holdings=holdings,
         combined_portfolio=combined,
         account_names=ingestion.accounts,
@@ -236,11 +237,11 @@ def generate_cost_basis(
     assets between brokers (e.g. Scalable Capital -> IBKR). The
     receiving broker requires the acquisition price of EACH still-held
     lot - not the per-ISIN average shown by the regular holdings report
-    - so this command projects every still-open FIFO lot onto its own
+    - so this command projects every still-open tax lot onto its own
     row and writes one file per requested format under
     `output/{csv,excel,pdf}/cost_basis_transfer_{stamp}.*`.
 
-    Reuses the same ingestion + FIFO pipeline as `generate-reports`,
+    Reuses the same ingestion + tax-lot pipeline as `generate-reports`,
     but writes only the cost-basis report.
     """
 
@@ -251,10 +252,10 @@ def generate_cost_basis(
         account_filter=account,
     )
 
-    engine = FifoEngine()
-    fifo_result = engine.process(ingestion.transactions)
+    engine = TaxLotEngine()
+    tax_lot_result = engine.process(ingestion.transactions)
 
-    cost_basis = build_cost_basis_rows(fifo_result.open_lots)
+    cost_basis = build_cost_basis_rows(tax_lot_result.open_lots)
 
     payload = ReportPayload(
         cost_basis=cost_basis,
@@ -296,7 +297,7 @@ def _print_summary(
     typer.echo(f"Accounts processed     : {', '.join(accounts) or '(none)'}")
     typer.echo(f"Transactions ingested  : {n_transactions}")
     typer.echo(f"Reporting currency     : {currency}")
-    typer.echo(f"Realized trades (FIFO) : {n_realized}")
+    typer.echo(f"Realized trades        : {n_realized}")
     typer.echo(
         "Total realized G/L     : "
         + format_money(total_realized, currency)

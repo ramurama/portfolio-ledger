@@ -1,8 +1,8 @@
-"""Tests for `app.services.fifo_engine`.
+"""Tests for `app.services.tax_lot_engine`.
 
 We focus on the partial-lot consumption path because it is the most
-error-prone part of the FIFO engine and the most important one to get
-right for tax reporting.
+error-prone part of the tax-lot engine and the most important one to
+get right for tax reporting.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from app.models import Transaction, TransactionType
-from app.services.fifo_engine import FifoEngine
+from app.services.tax_lot_engine import TaxLotEngine
 
 
 def _buy(account: str, isin: str, qty: str, total: str, when: datetime) -> Transaction:
@@ -65,9 +65,35 @@ def _security_transfer(
     )
 
 
-class TestFifoEngine:
+def _corporate_action(
+    account: str,
+    isin: str,
+    qty: str,
+    when: datetime,
+) -> Transaction:
+    """Build a Corporate action row mirroring Scalable Capital's export.
+
+    The broker reports `price=0` and `amount=0` on every Corporate
+    action, so the engine sees a zero per-share cost.
+    """
+
+    return Transaction(
+        account_name=account,
+        date=when,
+        isin=isin,
+        symbol=isin,
+        transaction_type=TransactionType.CORPORATE_ACTION,
+        quantity=Decimal(qty),
+        price=Decimal("0"),
+        fees=Decimal("0"),
+        currency="EUR",
+        total_amount=Decimal("0"),
+    )
+
+
+class TestTaxLotEngine:
     def test_simple_buy_then_full_sell(self) -> None:
-        engine = FifoEngine()
+        engine = TaxLotEngine()
         result = engine.process([
             _buy("ramu", "US123", "10", "-1000", datetime(2024, 1, 1)),
             _sell("ramu", "US123", "10", "1500", datetime(2024, 6, 1)),
@@ -82,7 +108,7 @@ class TestFifoEngine:
         assert result.open_lots == []
 
     def test_partial_lot_consumption(self) -> None:
-        engine = FifoEngine()
+        engine = TaxLotEngine()
         result = engine.process([
             _buy("ramu", "US123", "10", "-1000", datetime(2024, 1, 1)),
             _sell("ramu", "US123", "4", "600", datetime(2024, 6, 1)),
@@ -100,9 +126,9 @@ class TestFifoEngine:
         assert remaining.remaining_shares == Decimal("6")
         assert remaining.cost_per_share == Decimal("100")
 
-    def test_sell_consumes_multiple_lots_in_fifo_order(self) -> None:
-        """One Sell should match the OLDEST lot first, then the next."""
-        engine = FifoEngine()
+    def test_sell_consumes_multiple_lots_oldest_first(self) -> None:
+        """One Sell should match the OLDEST tax lot first, then the next."""
+        engine = TaxLotEngine()
         result = engine.process([
             _buy("ramu", "US123", "5", "-500", datetime(2024, 1, 1)),   # $100/sh
             _buy("ramu", "US123", "5", "-750", datetime(2024, 2, 1)),   # $150/sh
@@ -128,7 +154,7 @@ class TestFifoEngine:
         assert result.open_lots[0].remaining_shares == Decimal("2")
 
     def test_accounts_have_independent_queues(self) -> None:
-        engine = FifoEngine()
+        engine = TaxLotEngine()
         result = engine.process([
             _buy("ramu", "US123", "5", "-500", datetime(2024, 1, 1)),
             _buy("rakshana", "US123", "5", "-1000", datetime(2024, 1, 2)),
@@ -149,7 +175,7 @@ class TestFifoEngine:
 
     def test_short_sale_does_not_crash(self) -> None:
         """Selling more than ever bought logs a warning and stops cleanly."""
-        engine = FifoEngine()
+        engine = TaxLotEngine()
         result = engine.process([
             _sell("ramu", "US123", "5", "500", datetime(2024, 6, 1)),
         ])
@@ -157,7 +183,7 @@ class TestFifoEngine:
         assert result.open_lots == []
 
     def test_security_transfer_in_opens_lot(self) -> None:
-        engine = FifoEngine()
+        engine = TaxLotEngine()
         result = engine.process([
             _security_transfer(
                 "ramu", "US123", "5", "600", datetime(2024, 1, 1)
@@ -177,9 +203,10 @@ class TestFifoEngine:
 
         Lot cost basis is 10 * $100 = $1000. Transfer-out moves 4 shares
         at a $120 broker price ($480 total). The adjustment must absorb
-        the gap between the FIFO pop ($400) and the broker amount ($480).
+        the gap between the per-lot pop ($400) and the broker amount
+        ($480).
         """
-        engine = FifoEngine()
+        engine = TaxLotEngine()
         result = engine.process([
             _buy("ramu", "US123", "10", "-1000", datetime(2024, 1, 1)),
             _security_transfer(
@@ -209,7 +236,7 @@ class TestFifoEngine:
 
         Mirrors the Sony Group "switch" pattern in the real exports.
         """
-        engine = FifoEngine()
+        engine = TaxLotEngine()
         result = engine.process([
             _buy("ramu", "US123", "10", "-200", datetime(2024, 1, 1)),  # avg $20
             _security_transfer(
@@ -236,3 +263,41 @@ class TestFifoEngine:
             + result.cost_adjustments[("ramu", "US123")]
         )
         assert invested == Decimal("200")
+
+    def test_corporate_action_inbound_is_zero_cost_acquisition(self) -> None:
+        """A free-shares corporate action must add a lot at cost 0 so a
+        later sell books the full proceeds as realized gain."""
+        engine = TaxLotEngine()
+        result = engine.process([
+            _corporate_action("ramu", "US123", "5", datetime(2024, 1, 1)),
+            _sell("ramu", "US123", "5", "150", datetime(2024, 6, 1)),
+        ])
+
+        assert len(result.realized_trades) == 1
+        trade = result.realized_trades[0]
+        assert trade.shares_sold == Decimal("5")
+        assert trade.acquisition_cost == Decimal("0")
+        assert trade.sale_proceeds == Decimal("150")
+        assert trade.realized_gain_loss == Decimal("150")
+        assert result.open_lots == []
+
+    def test_corporate_action_outbound_is_ignored(self) -> None:
+        """A negative-quantity corporate action represents the broker
+        reducing a parent position when shares convert to a successor.
+        We deliberately ignore it - the parent's original lots stay
+        in the queue and any subsequent sell of the parent uses the
+        full original cost basis."""
+        engine = TaxLotEngine()
+        result = engine.process([
+            _buy("ramu", "PARENT", "10", "-200", datetime(2024, 1, 1)),
+            _corporate_action("ramu", "PARENT", "-3", datetime(2024, 6, 1)),
+            _sell("ramu", "PARENT", "10", "300", datetime(2024, 12, 1)),
+        ])
+
+        # All 10 shares still consumable from the original buy at $20.
+        assert len(result.realized_trades) == 1
+        trade = result.realized_trades[0]
+        assert trade.shares_sold == Decimal("10")
+        assert trade.acquisition_cost == Decimal("200")
+        assert trade.sale_proceeds == Decimal("300")
+        assert trade.realized_gain_loss == Decimal("100")

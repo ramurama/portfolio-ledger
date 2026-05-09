@@ -6,10 +6,11 @@ useless when transferring assets between brokers, because the receiving
 broker (IBKR) needs the acquisition price of *each lot* to keep future
 sells correctly tax-matched.
 
-The FIFO engine already produces the exact data we need: every still-
-held purchase fragment lives in `FifoResult.open_lots` with its own
-`buy_date` and `cost_per_share` (`app.services.fifo_engine`). This
-module is a thin presentational projection of those `OpenLot` records:
+The tax-lot engine already produces the exact data we need: every
+still-held purchase fragment lives in `TaxLotResult.open_lots` with its
+own `buy_date` and `cost_per_share` (`app.services.tax_lot_engine`).
+This module is a thin presentational projection of those `OpenLot`
+records:
 
     * one row per open lot (NEVER aggregated by ISIN)
     * sorted per account, then by symbol / ISIN / acquisition date so
@@ -77,12 +78,12 @@ def build_cost_basis_rows(open_lots: Iterable[OpenLot]) -> list[CostBasisRow]:
 
     Why this order? Operators typically work through one security at a
     time on IBKR's intake form, oldest lot first - that matches the
-    natural FIFO ordering the broker uses for future sell-side tax
-    calculations. Account is the outermost grouping because each
+    natural chronological ordering the broker uses for future sell-side
+    tax calculations. Account is the outermost grouping because each
     sub-account transfers independently.
 
     Defensively skip any lot with non-positive `remaining_shares`. The
-    FIFO engine pops fully-consumed lots, but a future caller might
+    tax-lot engine pops fully-consumed lots, but a future caller might
     feed us a list that has not been pruned, and a zero-share row is
     nonsense in a transfer context.
     """

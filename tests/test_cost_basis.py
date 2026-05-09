@@ -1,7 +1,7 @@
 """Tests for `app.services.cost_basis`.
 
 The cost-basis projection is intentionally lossless: each still-open
-FIFO lot becomes one row in the report. Two invariants matter:
+tax lot becomes one row in the report. Two invariants matter:
 
     * lots are NEVER aggregated by ISIN - the receiving broker (IBKR)
       needs the per-lot cost so future sells can be tax-matched
@@ -89,7 +89,7 @@ class TestBuildCostBasisRows:
 
     def test_zero_remaining_shares_are_skipped(self) -> None:
         """A lot whose `remaining_shares` is 0 should never reach the
-        report - it has nothing to transfer. The FIFO engine pops
+        report - it has nothing to transfer. The tax-lot engine pops
         consumed lots so we expect zero, but defending against a
         non-pruned input list is cheap."""
         rows = build_cost_basis_rows([

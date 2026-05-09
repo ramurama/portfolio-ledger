@@ -1,8 +1,9 @@
 # Portfolio Ledger
 
 Production-grade Python 3 tool for processing brokerage transaction
-exports from **Scalable Capital Germany**, computing FIFO tax lots and
-generating tax / portfolio reports in CSV, Excel and PDF.
+exports from **Scalable Capital Germany**, tracking individual tax lots
+(FIFO matching) and generating tax / portfolio reports in CSV, Excel
+and PDF.
 
 The codebase is structured for long-term maintainability and is ready
 for additional broker integrations - new brokers only need a new parser
@@ -13,11 +14,12 @@ class registered in `app/parsers/registry.py`.
 ## Features
 
 - Parses Scalable Capital DE CSV exports (German number formatting).
-- Computes FIFO tax lots using `collections.deque` with full support
-  for partial lot consumption.
+- Tracks tax lots via FIFO matching (`collections.deque`) with full
+  support for partial lot consumption.
 - Aggregates current holdings per account and across the family.
-- Renders 3 standard reports (FIFO realized gains, current holdings,
-  combined family portfolio) in 3 output formats (CSV, Excel, PDF).
+- Renders 3 standard reports (Tax Lots realized gains, current
+  holdings, combined family portfolio) in 3 output formats (CSV, Excel,
+  PDF).
 - Generates an opt-in **per-lot Cost Basis Transfer** report for
   broker-to-broker transfers (e.g. Scalable Capital -> IBKR).
 - All money math uses `Decimal` - never `float`.
@@ -31,9 +33,9 @@ class registered in `app/parsers/registry.py`.
 app/
   config.py              Constants and filesystem paths.
   main.py                Typer CLI entrypoint (python -m app.main).
-  models/                Pydantic Transaction model + FIFO dataclasses.
+  models/                Pydantic Transaction model + tax-lot dataclasses.
   parsers/               Broker-specific CSV parsers (+ registry).
-  services/              Pure business logic: ingestion, FIFO, holdings.
+  services/              Pure business logic: ingestion, tax lots, holdings.
   reports/               CSV / Excel / PDF renderers + orchestrator.
   utils/                 Decimal / date / logging helpers.
 input/
@@ -57,7 +59,7 @@ Drop your Scalable Capital CSV exports under `input/<account_name>/`
 (one folder per person). Then:
 
 ```bash
-# Smoke-test: parse + run FIFO and print a summary
+# Smoke-test: parse + run tax-lot matching and print a summary
 python -m app.main process
 
 # Generate every report in every format
@@ -83,7 +85,7 @@ each other.
 When transferring assets out of Scalable Capital (e.g. into IBKR), the
 receiving broker needs the acquisition price of **each lot** so future
 sells stay tax-matched correctly. The averaged "Current Holdings"
-report is not enough - you need one row per still-open FIFO lot.
+report is not enough - you need one row per still-open tax lot.
 
 ```bash
 # Generate one row per open lot in every format
@@ -122,5 +124,5 @@ when running inside Docker:
    (yield `Transaction` objects).
 3. Register the new class in `app/parsers/registry.py`.
 
-The rest of the application (FIFO, holdings, reports) is broker-agnostic
-and requires no further changes.
+The rest of the application (tax-lot engine, holdings, reports) is
+broker-agnostic and requires no further changes.

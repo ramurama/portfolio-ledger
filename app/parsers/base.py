@@ -1,7 +1,7 @@
 """Abstract base class for all broker parsers.
 
 A parser's only job is to turn a raw broker file into a list of
-`Transaction` objects. It must NOT perform FIFO calculations, file IO
+`Transaction` objects. It must NOT perform tax-lot calculations, file IO
 beyond reading the source file, or reporting. Keeping this contract
 narrow is what lets us add a new broker by writing a single class.
 """

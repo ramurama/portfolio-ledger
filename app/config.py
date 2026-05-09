@@ -114,7 +114,7 @@ DEFAULT_CURRENCY: Final[str] = "EUR"
 # Transaction filtering
 # ---------------------------------------------------------------------------
 # Raw broker `type` values admitted during parsing. Anything not listed here
-# is ignored before it can affect FIFO, holdings or portfolio reports.
+# is ignored before it can affect tax-lot, holdings or portfolio reports.
 SUPPORTED_TRANSACTION_TYPES: Final[tuple[str, ...]] = _resolve_csv_list(
     "PORTFOLIO_LEDGER_TRANSACTION_TYPES",
     (
@@ -125,5 +125,6 @@ SUPPORTED_TRANSACTION_TYPES: Final[tuple[str, ...]] = _resolve_csv_list(
         "Taxes",
         "Tax",
         "Security transfer",
+        "Corporate action",
     ),
 )

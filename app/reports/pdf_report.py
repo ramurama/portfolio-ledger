@@ -4,7 +4,7 @@ The renderer supports two modes through a single entry-point:
 
     * Single-section reports (e.g. Current Holdings) - pass one
       `PdfSection` and the document is one continuous flow.
-    * Multi-section reports (e.g. per-account FIFO) - pass several
+    * Multi-section reports (e.g. per-account Tax Lots) - pass several
       `PdfSection` objects and each starts on a fresh page, with its
       own subtitle and totals strip.
 
@@ -207,9 +207,9 @@ _TABLE_STYLE = TableStyle([
 class PdfSection:
     """One logical section of a PDF report.
 
-    For multi-section documents (e.g. per-account FIFO) every section
-    begins on a fresh page. For single-section documents we just render
-    the lone section without a forced page break.
+    For multi-section documents (e.g. per-account Tax Lots) every
+    section begins on a fresh page. For single-section documents we just
+    render the lone section without a forced page break.
 
     Layout controls
     ---------------
@@ -358,9 +358,9 @@ def _build_story(
 
     for idx, section in enumerate(sections):
         if idx > 0:
-            # Hard page break between sections so each account's FIFO
-            # report stands on its own page even if the previous one
-            # was short.
+            # Hard page break between sections so each account's Tax
+            # Lots report stands on its own page even if the previous
+            # one was short.
             story.append(PageBreak())
 
         story.extend(_build_section_flowables(section))

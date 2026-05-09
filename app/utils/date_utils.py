@@ -1,9 +1,9 @@
 """Date and time parsing helpers.
 
 Scalable Capital exports the trade date and trade time as two separate
-columns (`date` and `time`). For accurate FIFO ordering we want a single
-sortable `datetime` value, so this module provides one canonical parser
-that combines both columns.
+columns (`date` and `time`). For accurate tax-lot ordering we want a
+single sortable `datetime` value, so this module provides one canonical
+parser that combines both columns.
 
 We intentionally use `dateutil.parser` for its lenient handling - even
 if the broker tweaks the export format (e.g. drops seconds) we still

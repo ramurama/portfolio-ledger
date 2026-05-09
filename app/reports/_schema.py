@@ -31,9 +31,9 @@ from app.utils.text import display_account_name
 
 
 # ---------------------------------------------------------------------------
-# FIFO realized-trades report
+# Tax Lots realized-trades report
 # ---------------------------------------------------------------------------
-FIFO_HEADERS: list[str] = [
+TAX_LOTS_HEADERS: list[str] = [
     "Account",
     "ISIN",
     "Symbol",
@@ -45,34 +45,35 @@ FIFO_HEADERS: list[str] = [
     # The "(Pre-Tax)" qualifier is part of the canonical header so
     # the information travels with the data into CSV / Excel exports,
     # where there is no separate notes mechanism to convey it. The PDF
-    # renderer drops the qualifier (see `fifo_pdf_headers`) because it
-    # already surfaces the same disclaimer in the page-1 notes band.
+    # renderer drops the qualifier (see `tax_lots_pdf_headers`) because
+    # it already surfaces the same disclaimer in the page-1 notes band.
     "Realized Gain/Loss (Pre-Tax)",
 ]
 
 
-def fifo_pdf_headers() -> list[str]:
-    """Header list to use when rendering FIFO into a PDF.
+def tax_lots_pdf_headers() -> list[str]:
+    """Header list to use when rendering Tax Lots into a PDF.
 
     Long parenthetical qualifiers like ``"(Pre-Tax)"`` clutter the
     bold table header and don't fit cleanly on a single line. The PDF
     already shows a "Note: Realized Gain/Loss is reported PRE-TAX..."
     band on the first page, so we strip the qualifier here. CSV and
-    Excel keep the canonical `FIFO_HEADERS` because they have no
+    Excel keep the canonical `TAX_LOTS_HEADERS` because they have no
     equivalent notes mechanism.
     """
 
-    return [h.replace(" (Pre-Tax)", "") for h in FIFO_HEADERS]
+    return [h.replace(" (Pre-Tax)", "") for h in TAX_LOTS_HEADERS]
 
 
-def sort_fifo_trades(trades: Iterable[RealizedTrade]) -> list[RealizedTrade]:
+def sort_tax_lots_trades(trades: Iterable[RealizedTrade]) -> list[RealizedTrade]:
     """Return a list of trades sorted by (buy_date, sell_date).
 
     The sort is stable, so trades sharing the same (buy_date, sell_date)
-    keep the order in which the FIFO engine emitted them - which itself
-    is deterministic because the engine consumes lots strictly in queue
-    order. We additionally tie-break on ISIN so reports are reproducible
-    even across re-runs that use different lot allocation strategies.
+    keep the order in which the tax-lot engine emitted them - which
+    itself is deterministic because the engine consumes lots strictly
+    in queue order (oldest first). We additionally tie-break on ISIN so
+    reports are reproducible even across re-runs that use different lot
+    allocation strategies.
     """
 
     return sorted(
@@ -81,11 +82,11 @@ def sort_fifo_trades(trades: Iterable[RealizedTrade]) -> list[RealizedTrade]:
     )
 
 
-def fifo_rows(
+def tax_lots_rows(
     trades: Iterable[RealizedTrade],
     currency: str,
 ) -> list[list[str]]:
-    """Render the FIFO realized-trades table body in `currency`."""
+    """Render the Tax Lots realized-trades table body in `currency`."""
 
     body: list[list[str]] = []
     for tr in trades:
@@ -210,7 +211,7 @@ def combined_rows(
 
 
 # ---------------------------------------------------------------------------
-# Cost-basis transfer report (one row per FIFO open lot)
+# Cost-basis transfer report (one row per still-open tax lot)
 # ---------------------------------------------------------------------------
 COST_BASIS_HEADERS: list[str] = [
     "Account",

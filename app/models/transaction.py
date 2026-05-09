@@ -36,8 +36,8 @@ class Transaction(BaseModel):
 
     # ``frozen=True`` makes Transaction effectively immutable, which is
     # important because we hand the same object to multiple services
-    # (FIFO engine, holdings calculator, report writers) and accidental
-    # mutation would be a debugging nightmare.
+    # (tax-lot engine, holdings calculator, report writers) and
+    # accidental mutation would be a debugging nightmare.
     model_config = ConfigDict(frozen=True, str_strip_whitespace=True)
 
     account_name: str = Field(..., description="Owner / account folder name")
@@ -68,10 +68,19 @@ class Transaction(BaseModel):
             "directly against the broker statement."
         ),
     )
+    reference: Optional[str] = Field(
+        default=None,
+        description=(
+            "Broker-side reference / order ID for the row. Used by the "
+            "ingestion layer to detect paired legs of internal sub-"
+            "account moves (e.g. Scalable Capital 'switch' transfers "
+            "whose inbound leg carries a 'SWITCH-' prefix)."
+        ),
+    )
 
     # ------------------------------------------------------------------
-    # Convenience helpers used by the reports and FIFO engine. They are
-    # implemented here so the report writers stay declarative.
+    # Convenience helpers used by the reports and tax-lot engine. They
+    # are implemented here so the report writers stay declarative.
     # ------------------------------------------------------------------
     @property
     def gross_amount(self) -> Decimal:
@@ -80,7 +89,7 @@ class Transaction(BaseModel):
 
     @property
     def signed_quantity(self) -> Decimal:
-        """Quantity with sign convention used by the FIFO engine.
+        """Quantity with sign convention used by the tax-lot engine.
 
         Buys / Savings plans are positive (they add lots), Sells are
         negative (they consume lots). Security transfers keep the broker

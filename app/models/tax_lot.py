@@ -1,6 +1,6 @@
-"""Data classes used by the FIFO engine.
+"""Data classes used by the tax-lot engine.
 
-The FIFO engine produces two complementary outputs:
+The tax-lot engine produces two complementary outputs:
 
     1. A queue of *open* lots - the bits of the original purchases that
        have not yet been sold. These describe the current holding.
@@ -21,7 +21,7 @@ from decimal import Decimal
 
 @dataclass
 class OpenLot:
-    """A still-held purchase fragment tracked by the FIFO queue.
+    """A still-held purchase fragment tracked by the tax-lot queue.
 
     Each Buy / Savings plan transaction creates one OpenLot. As Sells
     consume shares from the front of the queue we decrement
@@ -53,7 +53,7 @@ class RealizedTrade:
 
     One Sell transaction can produce *multiple* RealizedTrades, one per
     buy-lot it consumed (this is how partial lot consumption surfaces in
-    the FIFO report). The `realized_gain_loss` field is signed:
+    the Tax Lots report). The `realized_gain_loss` field is signed:
     positive = profit, negative = loss.
     """
 

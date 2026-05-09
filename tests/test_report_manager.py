@@ -1,7 +1,7 @@
 """Tests for `app.reports.report_manager`.
 
 Focused on the per-account bucketing helpers used by the Holdings,
-FIFO and Cost-Basis writers - the helpers that decide which rows
+Tax Lots and Cost-Basis writers - the helpers that decide which rows
 land on which PDF page / Excel sheet / CSV group.
 """
 
@@ -9,7 +9,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 
+import pytest
+
+from app.models import RealizedTrade
 from app.reports.report_manager import ReportManager
 from app.services.cost_basis import CostBasisRow
 from app.services.holdings import HoldingRow
@@ -46,11 +50,30 @@ def _cost_basis(account: str, isin: str, symbol: str = "Sym") -> CostBasisRow:
     )
 
 
+def _realized_trade(
+    account: str,
+    acquisition_cost: str,
+    sale_proceeds: str,
+) -> RealizedTrade:
+    """Minimal RealizedTrade factory for report-total tests."""
+
+    return RealizedTrade(
+        account_name=account,
+        isin="ISIN_A",
+        symbol="Sym",
+        buy_date=datetime(2024, 1, 1),
+        sell_date=datetime(2024, 2, 1),
+        shares_sold=Decimal("1"),
+        acquisition_cost=Decimal(acquisition_cost),
+        sale_proceeds=Decimal(sale_proceeds),
+    )
+
+
 class TestGroupHoldingsByAccount:
     def test_buckets_in_account_order(self) -> None:
         """Bucket order MUST follow `ordered_account_names`, not the
         insertion order of the input list. This is what guarantees the
-        PDF page order is identical to the FIFO report and the
+        PDF page order is identical to the Tax Lots report and the
         ingestion log."""
         holdings = [
             _holding("ramu", "ISIN_A"),
@@ -106,8 +129,9 @@ class TestGroupHoldingsByAccount:
 
 
 class TestGroupCostBasisByAccount:
-    """Cost-basis bucketing must mirror Holdings/FIFO bucketing exactly
-    so all per-account-split reports line up across the three commands.
+    """Cost-basis bucketing must mirror Holdings / Tax Lots bucketing
+    exactly so all per-account-split reports line up across the three
+    commands.
     """
 
     def test_buckets_in_account_order(self) -> None:
@@ -155,3 +179,55 @@ class TestGroupCostBasisByAccount:
         assert ReportManager._group_cost_basis_by_account([], ["ramu"]) == [
             ("ramu", []),
         ]
+
+
+class TestTaxLotsPdfTotals:
+    def test_pdf_includes_account_and_report_totals(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_write_pdf(*args, **kwargs):
+            captured["kwargs"] = kwargs
+            return args[0]
+
+        monkeypatch.setattr(
+            "app.reports.report_manager.write_pdf",
+            fake_write_pdf,
+        )
+
+        manager = ReportManager(pdf_dir=tmp_path)
+        trades = [
+            _realized_trade("ramu", "10", "15"),
+            _realized_trade("rakshana", "20", "27.50"),
+        ]
+
+        path = manager._write_tax_lots_pdf(
+            per_account=[
+                ("ramu", [trades[0]]),
+                ("rakshana", [trades[1]]),
+            ],
+            base_filename="tax_lots_report_test",
+            title="Tax Lots Realized Gains Report",
+            source_dates={},
+            currency="EUR",
+        )
+
+        assert path == tmp_path / "tax_lots_report_test.pdf"
+        kwargs = captured["kwargs"]
+        sections = kwargs["sections"]
+        assert sections[0].totals == {
+            "Account Realized Trades": "1",
+            "Account Realized Gain/Loss": "€5.00",
+        }
+        assert sections[1].totals == {
+            "Account Realized Trades": "1",
+            "Account Realized Gain/Loss": "€7.50",
+        }
+        assert kwargs["footer_totals"] == {
+            "Total Realized Trades": "2",
+            "Total Realized Gain/Loss": "€12.50",
+        }
+        assert kwargs["footer_totals_title"] == "Tax Lots Total"
