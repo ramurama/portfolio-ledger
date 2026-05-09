@@ -1,0 +1,177 @@
+date;time;status;reference;description;assetType;type;isin;shares;price;amount;fee;tax;currency
+2026-05-07;21:49:39;Executed;"SCALSX5ANYPvn2h";"Netflix";Security;Buy;US64110L1061;4;75,38;-301,52;0,00;0,00;EUR
+2026-05-07;13:09:51;Executed;"SCALycPTkpTP46U";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;2;132,40;-264,80;0,00;0,00;EUR
+2026-05-07;13:07:15;Executed;"SCALnHNUSgH8nqY";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;3;132,40;-397,20;0,00;0,00;EUR
+2026-05-07;11:41:14;Executed;"SCALWVsfmsPtSPH";"Boerse Stuttgart EUWAX Gold II";Security;Savings plan;DE000EWG2LD7;0,300464;133,127;-39,999870928;0,00;0,00;EUR
+2026-05-07;02:00:00;Executed;"UG1EAWB8MQBZSQR6LNNFD6";"Internal Transfer";Cash;Cash Transfer In;;;;300,00;0,00;;EUR
+2026-05-07;02:00:00;Executed;"CU5CBP47PTI7SECTJXZPZK";"Internal Transfer";Cash;Cash Transfer In;;;;400,00;0,00;;EUR
+2026-05-07;02:00:00;Executed;"UVJVSUODPLFE7SN2BPAWMJ";"Internal Transfer";Cash;Cash Transfer In;;;;300,00;0,00;;EUR
+2026-05-06;11:53:32;Executed;"SCALn5QbVFSZfBp";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;3;131,34;-394,02;0,00;0,00;EUR
+2026-05-06;02:00:00;Executed;"WDU8VU3JMMF2YX5TU2SVIA";"Internal Transfer";Cash;Cash Transfer In;;;;400,00;0,00;;EUR
+2026-05-05;20:05:54;Executed;"SCALJ9MmBW8qEWf";"Microsoft";Security;Buy;US5949181045;1;350,70;-350,70;0,00;0,00;EUR
+2026-05-04;15:25:47;Cancelled;"SCAL88fSEwv2JnR";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;0;0,00;0,00;0,00;0,00;EUR
+2026-05-04;12:49:13;Cancelled;"SCALUCjePhCr65s";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;0;0,00;0,00;0,00;0,00;EUR
+2026-05-04;08:14:01;Executed;"SCALsvJutcv6vMQ";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;2;128,96;-257,92;0,00;0,00;EUR
+2026-05-04;02:00:00;Executed;"HFYYVCYWLSNJTYFEPRICAQ";"Internal Transfer";Cash;Cash Transfer In;;;;400,00;0,00;;EUR
+2026-05-04;02:00:00;Executed;"N7ANAVENSHGVUFYFFAWW89";"Internal Transfer";Cash;Cash Transfer In;;;;318,29;0,00;;EUR
+2026-05-02;02:00:00;Executed;"74GXONKKQS17ZSBSPN6YYV";"Internal Transfer";Cash;Cash Transfer Out;;;;-2.000,00;0,00;;EUR
+2026-05-02;02:00:00;Executed;"260502-QW7KT3BEF6BFJ6JI7N9TGK";"For investments";Cash;Deposit;;;;2.000,00;0,00;;EUR
+2026-04-30;02:00:00;Executed;"WFGMULMU8FYE5K3KYQJAEZ";"Internal Transfer";Cash;Cash Transfer In;;;;200,00;0,00;;EUR
+2026-04-30;02:00:00;Executed;"TAWNY56S3LMEIVU3GBQUWF";"Internal Transfer";Cash;Cash Transfer Out;;;;-400,00;0,00;;EUR
+2026-04-28;14:30:42;Executed;"SCALbkVKsAMyUns";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;2;128,84;-257,68;0,00;0,00;EUR
+2026-04-28;02:00:00;Executed;"M3Y3ZNFXOKFNK91AFW7VXU";"Internal Transfer";Cash;Cash Transfer In;;;;500,00;0,00;;EUR
+2026-04-27;11:29:10;Executed;"SCALkH5tszSnLe1";"Xtrackers Nasdaq 100 (Acc)";Security;Savings plan;IE00BMFKG444;4,635638;53,93;-249,99995734;0,00;0,00;EUR
+2026-04-27;07:44:58;Executed;"SCALnTbJyQHkDbH";"Amazon.com";Security;Buy;US0231351067;1;225,30;-225,30;0,99;0,00;EUR
+2026-04-27;07:37:44;Executed;"SCALhLZiBszaxEx";"Microsoft";Security;Buy;US5949181045;1;363,10;-363,10;0,00;0,00;EUR
+2026-04-27;07:34:32;Executed;"SCALaowryXS9abN";"Netflix";Security;Buy;US64110L1061;4;78,85;-315,40;0,00;0,00;EUR
+2026-04-27;02:00:00;Executed;"O4NBFKAARNSJBXTPFWZM5S";"Internal Transfer";Cash;Cash Transfer In;;;;700,00;0,00;;EUR
+2026-04-25;02:00:00;Executed;"FTBIPDNYCKTRUKEW";"PRIME+ subscription";Cash;Fee;;;;-4,99;0,00;;EUR
+2026-04-24;12:25:54;Executed;"SCAL1VPCLWuyrVh";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;2;131,121;-262,242;0,00;0,00;EUR
+2026-04-24;02:00:00;Executed;"RZYLZOXVBPYUD5AHNGYDNJ";"Internal Transfer";Cash;Cash Transfer In;;;;300,00;0,00;;EUR
+2026-04-23;22:08:35;Executed;"SCALqLmRqLdpGpP";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;2;132,318;-264,636;0,00;0,00;EUR
+2026-04-21;11:08:31;Executed;"SCALcJcwMpDWcAx";"Microsoft";Security;Buy;US5949181045;1;356,90;-356,90;0,00;0,00;EUR
+2026-04-21;10:44:30;Executed;"SCALFRsDyC5TRaq";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;2;134,00;-268,00;0,00;0,00;EUR
+2026-04-21;10:44:10;Cancelled;"SCALQot9n4uifvm";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;0;0,00;0,00;0,00;0,00;EUR
+2026-04-20;02:00:00;Executed;"260420-QDMFENHGLWODKRFRVXMKBS";"For investments";Cash;Deposit;;;;3.200,00;0,00;;EUR
+2026-04-20;02:00:00;Executed;"PQJNUIDEMDJHX35RJWTJPC";"Internal Transfer";Cash;Cash Transfer Out;;;;-2.000,00;0,00;;EUR
+2026-04-16;11:50:27;Executed;"SCALCWjJEtEtraN";"Microsoft";Security;Savings plan;US5949181045;0,140469;355,95;-49,99994055;0,00;0,00;EUR
+2026-04-14;02:00:00;Executed;"267119_kTjbKRBDHxGByLgGW33JV6";"Taiwan Semiconductor Manufact. ADR";Cash;Distribution;US8740391003;;;0,23;0,00;0,05;EUR
+2026-04-10;11:11:23;Executed;"SCALJQEHrVg7vmu";"Boerse Stuttgart EUWAX Gold II";Security;Savings plan;DE000EWG2LD7;1,870252;133,6717901907;-249,99993294773707;0,00;0,00;EUR
+2026-04-10;02:00:00;Executed;"SLZ83XYQGICF6TCWNPTWTO";"Internal Transfer";Cash;Cash Transfer Out;;;;-250,00;0,00;;EUR
+2026-04-09;02:00:00;Executed;"260409-4VOCZ2H14VRKTUIPQEJUVL";"For investments";Cash;Deposit;;;;250,00;0,00;;EUR
+2026-04-09;02:00:00;Executed;"VZKTMRFGWEJBF5NFCUUG3R";"Scalable Capital Broker withdrawal";Cash;Withdrawal;;;;-250,00;0,00;;EUR
+2026-04-09;02:00:00;Executed;"WC2PVEOXABQXTAJWGQVQFH";"Scalable Capital Broker savings plan";Cash;Deposit;;;;250,00;0,00;;EUR
+2026-04-08;16:57:02;Executed;"SCALnSh35VXZRjt";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;2;133,37;-266,74;0,00;0,00;EUR
+2026-04-08;16:31:36;Executed;"SCAL2usbYQXZKbo";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;2;133,92;-267,84;0,00;0,00;EUR
+2026-04-08;15:50:15;Executed;"SCALR4P1v8zKeAu";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;4;134,36;-537,44;0,00;0,00;EUR
+2026-04-08;15:08:02;Executed;"SCAL4odva6KHMuJ";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;5;134,78;-673,90;0,00;0,00;EUR
+2026-04-08;14:45:51;Executed;"SCALouJAQAbV8jm";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;3;134,80;-404,40;0,00;0,00;EUR
+2026-04-08;14:45:22;Cancelled;"SCALi23kEZoMxi4";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;0;0,00;0,00;0,00;0,00;EUR
+2026-04-08;12:00:16;Cancelled;"SCALFjdHUXDFom5";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;0;0,00;0,00;0,00;0,00;EUR
+2026-04-08;10:30:21;Cancelled;"SCAL4FhiJutVB1x";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;0;0,00;0,00;0,00;0,00;EUR
+2026-04-08;09:03:44;Cancelled;"SCALwxWqrnaU43V";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;0;0,00;0,00;0,00;0,00;EUR
+2026-04-08;09:00:24;Cancelled;"SCALb93VgauU9ik";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;0;0,00;0,00;0,00;0,00;EUR
+2026-04-08;02:00:00;Executed;"UTUIZMWCVS1HJAQGQEDXPV";"Internal Transfer";Cash;Cash Transfer In;;;;1.000,00;0,00;;EUR
+2026-04-08;02:00:00;Executed;"Q67D86PCPO8QABVSFJNWBT";"Internal Transfer";Cash;Cash Transfer In;;;;1.000,00;0,00;;EUR
+2026-04-07;15:40:47;Executed;"SCALVnyATw2TE8T";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;2;132,00;-264,00;0,00;0,00;EUR
+2026-04-07;14:38:31;Executed;"SCALdrGPxkvTZrr";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;2;132,955;-265,91;0,00;0,00;EUR
+2026-04-01;11:26:17;Executed;"SCALnxZfDoLDgLx";"Boerse Stuttgart EUWAX Gold II";Security;Savings plan;DE000EWG2LD7;1,858133;134,5436457589;-249,99998812492215;0,00;0,00;EUR
+2026-04-01;02:00:00;Executed;"FJVEASDI83PLYIGJNLNDPK";"Internal Transfer";Cash;Cash Transfer Out;;;;-2.000,00;0,00;;EUR
+2026-04-01;02:00:00;Executed;"17357206-a59f-4a73-9232-d33bc45d5044";;Cash;Interest;;;;2,81;0,00;1,00;EUR
+2026-03-30;11:38:14;Executed;"SCALu33WbEYp7mD";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;2;129,235;-258,47;0,00;0,00;EUR
+2026-03-26;18:18:07;Executed;"SCALLG5Y1oSpJYR";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;3;124,316;-372,948;0,00;0,00;EUR
+2026-03-26;09:36:23;Executed;"SCALxTj3ZjgadSi";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;3;125,938;-377,814;0,99;0,00;EUR
+2026-03-26;09:31:26;Cancelled;"SCAL3kcdCyimT8t";"Boerse Stuttgart EUWAX Gold II";Security;Buy;DE000EWG2LD7;0;0,00;0,00;0,00;0,00;EUR
+2026-03-26;01:00:00;Executed;"FORG48FJACTYMIAP";"PRIME+ subscription";Cash;Fee;;;;-4,99;0,00;;EUR
+2026-03-25;11:40:09;Executed;"SCALtunDBkMbZuU";"Xtrackers Nasdaq 100 (Acc)";Security;Savings plan;IE00BMFKG444;1,032098;48,445;-49,99998761;0,00;0,00;EUR
+2026-03-25;01:00:00;Executed;"43A59BZXQS9RF5B1HT7ZTS";"Internal Transfer";Cash;Cash Transfer Out;;;;-4.000,00;0,00;;EUR
+2026-03-25;01:00:00;Executed;"5S46JAAJGKAHL3DRMT1MGQ";"Internal Transfer";Cash;Cash Transfer Out;;;;-5.000,00;0,00;;EUR
+2026-03-23;07:38:21;Executed;"SCALhUfWq9xgMQB";"iShares Physical Gold ETC";Security;Sell;IE00B4ND3602;120,583584;71,10;8.573,4928224;0,99;390,97;EUR
+2026-03-23;07:37:30;Cancelled;"SCALjQdFEjYjHwL";"iShares Physical Gold ETC";Security;Sell;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2026-03-23;07:32:18;Cancelled;"SCALFsfTK5ZYYzY";"iShares Physical Gold ETC";Security;Sell;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2026-03-20;16:52:15;Executed;"SCALUjENXqKoRhE";"iShares Physical Gold ETC";Security;Sell;IE00B4ND3602;70;76,605;5.362,35;0,99;385,91;EUR
+2026-03-20;16:05:55;Cancelled;"SCALFupSCpKi9rh";"iShares Physical Gold ETC";Security;Sell;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2026-03-19;01:00:00;Executed;"427071_kTjbKRBDHxGByLgGW33JV6";"Alphabet A";Cash;Distribution;US02079K3059;;;0,06;0,00;0,02;EUR
+2026-03-18;15:04:58;Cancelled;"SCALchywX256PcH";"iShares Physical Gold ETC";Security;Sell;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2026-03-10;11:42:09;Executed;"SCALekJimPAdp3i";"Microsoft";Security;Savings plan;US5949181045;0,141984;352,15;-49,9996656;0,00;0,00;EUR
+2026-03-10;11:39:38;Executed;"SCALAZxm1rh7VsZ";"Alphabet A";Security;Savings plan;US02079K3059;0,189681;263,60;-49,9999116;0,00;0,00;EUR
+2026-03-09;12:27:19;Executed;"SCALXcgNpwVP1A1";"Amazon.com";Security;Savings plan;US0231351067;0,275573;181,44;-49,99996512;0,00;0,00;EUR
+2026-03-04;12:05:48;Executed;"SCALVfMpabEm1MA";"Alphabet A";Security;Savings plan;US02079K3059;0,191241;261,45;-49,99995945;0,00;0,00;EUR
+2026-03-04;11:40:06;Executed;"SCALpaPcADYDgQP";"Taiwan Semiconductor Manufact. ADR";Security;Savings plan;US8740391003;0,160771;311,00;-49,999781;0,00;0,00;EUR
+2026-02-25;12:06:09;Executed;"SCALHe2gx5q4GcD";"Xtrackers Nasdaq 100 (Acc)";Security;Savings plan;IE00BMFKG444;1,016053;49,21;-49,99996813;0,00;0,00;EUR
+2026-02-19;22:25:26;Executed;"SCALAS5qGDHhFpt";"iShares S&P 500 Information Technology Sector (Acc)";Security;Sell;IE00B3WJKG14;3,650263;33,955;123,944680165;0,99;0,00;EUR
+2026-02-18;01:00:00;Executed;"410480_kTjbKRBDHxGByLgGW33JV6";"Apple";Cash;Distribution;US0378331005;;;0,02;0,00;0,01;EUR
+2026-02-09;11:22:44;Executed;"SCALeqLRiQ9tQoR";"Amazon.com";Security;Savings plan;US0231351067;0,168842;177,68;-29,99984656;0,00;0,00;EUR
+2026-02-09;11:19:36;Executed;"SCALiUyguAuD3H9";"Taiwan Semiconductor Manufact. ADR";Security;Savings plan;US8740391003;0,136752;292,50;-39,99996;0,00;0,00;EUR
+2026-02-04;11:38:19;Executed;"SCALkYjR8kmDuNr";"Alphabet A";Security;Savings plan;US02079K3059;0,172205;290,35;-49,99972175;0,00;0,00;EUR
+2026-02-03;01:00:00;Executed;"260203-QMF5TVGVBVOQ8MC3CRJT8B";"For investments";Cash;Deposit;;;;250,00;0,00;;EUR
+2026-01-26;11:49:39;Executed;"SCALGaBwdqeZHQ8";"iShares S&P 500 Information Technology Sector (Acc)";Security;Savings plan;IE00B3WJKG14;1,439263;34,74;-49,99999662;0,00;0,00;EUR
+2026-01-13;11:25:40;Executed;"SCALbq6tmy3gESZ";"Apple";Security;Savings plan;US0378331005;0,135104;222,05;-29,9998432;0,00;0,00;EUR
+2026-01-08;15:42:59;Executed;"SCALqJ3z63NudWH";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;35;73,695;-2.579,325;0,00;0,00;EUR
+2026-01-08;15:42:32;Executed;"SCALMiaYzvZXEWo";"iShares Physical Gold ETC";Security;Sell;IE00B4ND3602;35;73,73;2.580,55;0,99;0,00;EUR
+2026-01-07;11:21:43;Executed;"SCALGeUHutuS6zr";"Amazon.com";Security;Savings plan;US0231351067;0,14627;205,10;-29,999977;0,00;0,00;EUR
+2026-01-07;11:19:36;Executed;"SCALMzV4Ubpz27G";"Taiwan Semiconductor Manufact. ADR";Security;Savings plan;US8740391003;0,144144;277,50;-39,99996;0,00;0,00;EUR
+2026-01-05;11:07:24;Executed;"SCALcWn91u4rjHy";"Alphabet A";Security;Savings plan;US02079K3059;0,092489;270,30;-24,9997767;0,00;0,00;EUR
+2026-01-01;01:00:00;Executed;"34893184-41fa-4e56-8494-6229c57dd3e6";;Cash;Interest;;;;0,38;0,00;0,00;EUR
+2025-12-29;01:00:00;Executed;"251229-CDIKGKSBRNCKP32FQPTKMN";"For investments";Cash;Deposit;;;;100,00;0,00;;EUR
+2025-12-25;01:00:00;Executed;"251225-BNPXJMAQRWXFN7FWWD4WYL";"For investments";Cash;Deposit;;;;400,00;0,00;;EUR
+2025-12-06;01:00:00;Executed;"SWITCH-101-kTjbKRBDHxGByLgGW33JV6-IE00B4ND3602-WDP";"iShares Physical Gold ETC";Security;Security transfer;IE00B4ND3602;152,361;70,01;10.666,79361;;;EUR
+2025-12-06;01:00:00;Executed;"SWITCH-101-kTjbKRBDHxGByLgGW33JV6-IE00B3WJKG14-WDP";"iShares S&P 500 Information Technology Sector (Acc)";Security;Security transfer;IE00B3WJKG14;2,211;36,495;80,690445;;;EUR
+2025-12-06;01:00:00;Executed;"SWITCH-101-kTjbKRBDHxGByLgGW33JV6-EUR-DEPOSIT";"";Cash;Deposit;;;;0,00;0,00;;EUR
+2025-12-05;01:00:00;Executed;"WWUM 00596749782";"iShares Physical Gold ETC";Security;Security transfer;IE00B4ND3602;-152,361;70,16;-10.689,64776;;;EUR
+2025-12-05;01:00:00;Executed;"WWUM 00596749694";"iShares S&P 500 Information Technology Sector (Acc)";Security;Security transfer;IE00B3WJKG14;-2,211;36,24;-80,12664;;;EUR
+2025-10-27;11:54:35;Executed;"SCALM89AtJvuceY";"iShares Physical Gold ETC";Security;Savings plan;IE00B4ND3602;0,222584;67,39;-14,99993576;0,00;0,00;EUR
+2025-10-20;11:16:52;Executed;"SCALW3NNQAUiTj4";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;8;70,83;-566,64;0,00;0,00;EUR
+2025-10-16;02:00:00;Executed;"251016-69QMYSEJH1UTBH1Y9LRFRR";"For emergency fund";Cash;Deposit;;;;570,00;0,00;;EUR
+2025-10-01;02:00:00;Executed;"4f291bc7-32a1-4893-bd3f-fb5708ac2263";;Cash;Interest;;;;3,17;0,00;0,00;EUR
+2025-08-14;02:00:00;Executed;"35K6YOHSTGPBO9MHAIAXPG";"Scalable Capital Broker withdrawal";Cash;Withdrawal;;;;-950,00;0,00;;EUR
+2025-08-12;15:37:58;Executed;"SCALaccJbcDixVd";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;5;55,90;-279,50;0,00;0,00;EUR
+2025-08-08;11:54:47;Executed;"SCALMxP9XGqZqMg";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;5;56,74;-283,70;0,00;0,00;EUR
+2025-07-07;02:00:00;Executed;"250707-VA2YH5MQRYTKDZYOV6ICG7";"For investments";Cash;Deposit;;;;1.500,00;0,00;;EUR
+2025-07-01;02:00:00;Executed;"b812d185-3f3f-4ac6-b449-05c8a74792f7";;Cash;Interest;;;;0,12;0,00;0,00;EUR
+2025-04-18;02:00:00;Executed;"CDS_DTA_72ETcK7id6oR48MPrkaeqE_1_vKh2QpKrWmuHVPEM4D2Lzw";"";Cash;Taxes;;;;0,20;0,00;;EUR
+2025-04-01;02:00:00;Executed;"b74ae081-7a4d-49f5-8186-5a9ce355876f";;Cash;Interest;;;;0,56;0,00;0,20;EUR
+2025-03-10;17:21:50;Executed;"SCALtmqNARxPwRm";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;5;52,05;-260,25;0,00;0,00;EUR
+2025-03-10;15:55:01;Cancelled;"SCALssj4ZGvHy1J";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2025-03-10;13:35:37;Cancelled;"SCAL5GCftLByMzM";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2025-03-05;19:32:56;Executed;"SCALqn7BKeGHwXE";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;5;52,50;-262,50;0,00;0,00;EUR
+2025-02-26;01:00:00;Executed;"wcq1cSk8ua6ZncCHPFtyC2";"Emergency fund";Cash;Deposit;;;;500,00;0,00;;EUR
+2025-02-25;16:30:56;Executed;"SCALAzE27NQim5k";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;5;53,70;-268,50;0,00;0,00;EUR
+2025-02-25;16:26:02;Cancelled;"SCALEVzhpCcKCiU";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2025-02-25;16:23:49;Executed;"SCALqWPsGrvs1rJ";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;5;53,90;-269,50;0,00;0,00;EUR
+2025-02-21;01:00:00;Executed;"mk6wyoF7R78r2fSNGrvDJP";"Sent from N26";Cash;Deposit;;;;1,00;0,00;;EUR
+2025-02-21;01:00:00;Executed;"3DBNMZ61EZBTBACOYYW9GM";"Scalable Capital Broker withdrawal";Cash;Withdrawal;;;;-80,74;0,00;;EUR
+2025-02-21;01:00:00;Executed;"4dSb7aNAcpGBdPEQ7GbUjh";"Emergency fund";Cash;Deposit;;;;500,00;0,00;;EUR
+2025-02-21;01:00:00;Executed;"oVzYodarcCd889erLmXkpX";"";Cash;Deposit;;;;80,74;0,00;;EUR
+2024-11-27;18:48:27;Executed;"SCALo3pvgZbZG5S";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;6;48,642;-291,8519;0,00;0,00;EUR
+2024-11-27;18:47:38;Cancelled;"SCALYtczYqg2iqC";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2024-11-27;17:33:07;Cancelled;"SCALm7JVwsw1g7q";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2024-11-26;10:10:32;Cancelled;"SCALLqwqcgVagGV";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2024-11-25;15:17:32;Executed;"SCALMamTtAL5aGL";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;6;48,994;-293,964;0,00;0,00;EUR
+2024-11-20;10:28:51;Executed;"SCALBN6t3kdN5mk";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;6;48,278;-289,668;0,00;0,00;EUR
+2024-11-11;01:00:00;Executed;"946450390";"Emergency fund";Cash;Deposit;;;;936,00;0,00;;EUR
+2024-11-04;11:31:17;Executed;"SCALRBqeoHZF9sv";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;6;48,896;-293,3759;0,00;0,00;EUR
+2024-10-31;16:35:42;Executed;"SCALkwuTzLpSWBG";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;6;49,00;-294,00;0,00;0,00;EUR
+2024-10-31;14:48:15;Executed;"SCALX2dKisWmm53";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;6;49,392;-296,3519;0,00;0,00;EUR
+2024-10-31;14:48:02;Cancelled;"SCALFEo6kj77pLV";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2024-10-31;14:44:38;Executed;"SCALty8KqpBKZBz";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;6;49,344;-296,064;0,00;0,00;EUR
+2024-10-30;01:00:00;Executed;"945763338";"Dental fund mapped to emergency fund";Cash;Deposit;;;;1.200,00;0,00;;EUR
+2024-10-14;13:36:43;Executed;"SCALaZd8BxFGuSC";"iShares Physical Gold ETC";Security;Savings plan;IE00B4ND3602;0,891;47,298;-42,1425;0,00;0,00;EUR
+2024-10-08;16:45:44;Executed;"SCALpQmqDSjnytg";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;12;46,50;-558,00;0,00;0,00;EUR
+2024-10-08;16:43:41;Cancelled;"SCAL6giTAnhydPX";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2024-10-08;16:42:18;Cancelled;"SCAL4TZsTBhbBve";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2024-10-07;02:00:00;Executed;"944534565";"Emergency fund";Cash;Deposit;;;;600,00;0,00;;EUR
+2024-10-01;16:34:49;Executed;"SCALzBbz3cu6kjz";"iShares Physical Gold ETC";Security;Savings plan;IE00B4ND3602;0,47;46,802;-21,9969;0,00;0,00;EUR
+2024-09-26;12:15:53;Executed;"SCALmWoBZu3Wmok";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;6;46,582;-279,492;0,00;0,00;EUR
+2024-09-25;02:00:00;Executed;"943744213";"Emergency fund";Cash;Deposit;;;;300,00;0,00;;EUR
+2024-08-14;16:02:09;Executed;"SCALtKS6qQQbuXw";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;12;43,30;-519,60;0,00;0,00;EUR
+2024-08-14;16:01:26;Cancelled;"SCALqAPU4bXFRUG";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2024-08-14;15:58:08;Cancelled;"SCALA48Dv7b8F3m";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2024-08-08;02:00:00;Executed;"942010732";"Gutschrift";Cash;Deposit;;;;500,00;0,00;;EUR
+2024-07-26;11:56:47;Executed;"SCALsvYUvPtunwc";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;6;42,516;-255,096;0,00;0,00;EUR
+2024-07-26;11:56:02;Executed;"SCALADAB4TodEJ3";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;6;42,514;-255,084;0,00;0,00;EUR
+2024-07-25;02:00:00;Executed;"941125926";"Gutschrift";Cash;Deposit;;;;500,00;0,00;;EUR
+2024-07-24;21:04:23;Executed;"SCALxCV8bMyLz2v";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;11;43,42;-477,62;0,00;0,00;EUR
+2024-07-24;21:03:52;Cancelled;"SCAL19KDRtY44hv";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2024-07-24;20:12:24;Cancelled;"SCALYbtPUxz1a2M";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2024-07-23;02:00:00;Executed;"941069143";"Gutschrift";Cash;Deposit;;;;500,00;0,00;;EUR
+2024-06-07;15:53:22;Executed;"SCALBgjHCDwXJPf";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;7;41,49;-290,43;0,00;0,00;EUR
+2024-06-05;02:00:00;Executed;"938859205";"Gutschrift";Cash;Deposit;;;;50,00;0,00;;EUR
+2024-06-04;16:17:02;Executed;"SCALv5U36hbc9Ps";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;7;41,502;-290,514;0,00;0,00;EUR
+2024-06-04;16:14:56;Executed;"SCAL93QuA1ZvjR3";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;7;41,548;-290,836;0,00;0,00;EUR
+2024-06-03;02:00:00;Executed;"938672196";"Gutschrift";Cash;Deposit;;;;500,00;0,00;;EUR
+2024-06-03;02:00:00;Executed;"938672197";"Gutschrift";Cash;Deposit;;;;300,00;0,00;;EUR
+2024-05-31;16:10:30;Executed;"SCAL69LMeQMxLV8";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;6;41,898;-251,388;0,00;0,00;EUR
+2024-05-31;08:35:24;Cancelled;"SCALx9rNUScczVn";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2024-05-28;10:49:16;Executed;"SCALXkHcEVfpozc";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;6;41,936;-251,616;0,00;0,00;EUR
+2024-05-21;02:00:00;Executed;"938092153";"Gutschrift";Cash;Deposit;;;;500,00;0,00;;EUR
+2024-05-03;13:12:32;Executed;"SCALLiAFUrZRBDD";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;7;41,598;-291,186;0,00;0,00;EUR
+2024-04-30;10:56:13;Executed;"SCALg61mxV2xHzv";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;10;42,00;-420,00;0,00;0,00;EUR
+2024-04-29;08:07:44;Cancelled;"SCALHoyTbxSQcZb";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2024-04-29;07:31:08;Cancelled;"SCALy8eW57Y1eHW";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2024-04-29;07:31:08;Cancelled;"SCALD8LZXQ5crke";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;0;0,00;0,00;0,00;0,00;EUR
+2024-04-26;19:18:46;Executed;"SCALvBNmNPfuX3Q";"iShares Physical Gold ETC";Security;Buy;IE00B4ND3602;6;42,666;-255,996;0,00;0,00;EUR
+2024-04-25;02:00:00;Executed;"UMKBGXJVWK5ABZURJHYVHQ";"Scalable Capital Broker deposit";Cash;Deposit;;;;1.000,00;0,00;;EUR
+2024-01-15;12:07:55;Executed;"SCALEHB3UJsbbuj";"iShares S&P 500 Information Technology Sector UCITS ETF";Security;Savings plan;IE00B3WJKG14;2,211;22,605;-49,9796;0,00;0,00;EUR
+2024-01-11;01:00:00;Executed;"CBC47PXZFCKSLIYMAXPH81";"Scalable Capital Broker first deposit";Cash;Deposit;;;;1,00;0,00;;EUR
+2024-01-09;01:00:00;Executed;"932513760";"first deposit";Cash;Deposit;;;;50,00;0,00;;EUR

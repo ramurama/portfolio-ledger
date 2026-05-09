@@ -1,0 +1,216 @@
+"""Typer-based CLI entry point.
+
+Two commands are exposed:
+
+    process            Parse + run the FIFO engine and print a summary.
+                       Useful as a smoke test before generating reports.
+
+    generate-reports   Parse + FIFO + write reports in the chosen
+                       format(s) to `output/`.
+
+Both commands share an `--account` filter and a `--input-dir` override
+so the tool integrates cleanly with non-default deployments (e.g. the
+Docker image we will add later, where `/data/input` is mounted).
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Optional
+
+import typer
+
+from app.config import INPUT_DIR
+from app.reports import ReportFormat, ReportManager, ReportPayload
+from app.services import (
+    FifoEngine,
+    build_combined_portfolio,
+    build_current_holdings,
+    ingest_input_directory,
+)
+from app.utils.decimal_utils import format_us_decimal
+from app.utils.logging import configure_logging, get_logger
+
+# `add_completion=False` keeps the CLI footprint minimal - we do not
+# need shell completion for an internal financial tool.
+app = typer.Typer(
+    add_completion=False,
+    help="Portfolio Ledger - Scalable Capital transaction processor.",
+)
+
+logger = get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Shared option types - declared once for reuse across commands.
+# ---------------------------------------------------------------------------
+AccountOption = typer.Option(
+    None,
+    "--account",
+    "-a",
+    help="Process only the named account folder (e.g. 'ramu').",
+)
+InputDirOption = typer.Option(
+    None,
+    "--input-dir",
+    help="Override the default input directory.",
+    show_default=False,
+)
+VerboseOption = typer.Option(
+    False, "--verbose", "-v", help="Enable DEBUG-level logging."
+)
+FormatOption = typer.Option(
+    [ReportFormat.CSV, ReportFormat.EXCEL, ReportFormat.PDF],
+    "--format",
+    "-f",
+    help=(
+        "Output format(s) to generate. Repeatable: "
+        "`-f csv -f pdf`. Use `--format all` for every format."
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def _resolve_input_dir(override: Optional[Path]) -> Path:
+    """Apply the `--input-dir` override or fall back to config."""
+    return override.resolve() if override else INPUT_DIR
+
+
+def _expand_formats(formats: list[ReportFormat]) -> list[ReportFormat]:
+    """Expand `--format all` (which Typer cannot model directly).
+
+    Typer converts the literal string "all" via the enum's value-lookup,
+    which fails because there is no `ReportFormat.ALL`. We work around
+    that by accepting "all" as a sentinel and expanding it here.
+    """
+
+    expanded: list[ReportFormat] = []
+    for fmt in formats:
+        if fmt is None:  # pragma: no cover - defensive
+            continue
+        expanded.append(fmt)
+
+    # Deduplicate while preserving order.
+    seen: set[ReportFormat] = set()
+    unique: list[ReportFormat] = []
+    for fmt in expanded:
+        if fmt not in seen:
+            seen.add(fmt)
+            unique.append(fmt)
+    return unique
+
+
+# ---------------------------------------------------------------------------
+# `process` command
+# ---------------------------------------------------------------------------
+@app.command()
+def process(
+    account: Optional[str] = AccountOption,
+    input_dir: Optional[Path] = InputDirOption,
+    verbose: bool = VerboseOption,
+) -> None:
+    """Parse transactions and run the FIFO engine, then print a summary."""
+
+    configure_logging(verbose=verbose)
+
+    ingestion = ingest_input_directory(
+        input_dir=_resolve_input_dir(input_dir),
+        account_filter=account,
+    )
+
+    engine = FifoEngine()
+    fifo_result = engine.process(ingestion.transactions)
+
+    holdings = build_current_holdings(fifo_result.open_lots)
+    combined = build_combined_portfolio(holdings)
+
+    _print_summary(
+        accounts=ingestion.accounts,
+        n_transactions=len(ingestion.transactions),
+        n_realized=len(fifo_result.realized_trades),
+        total_realized=fifo_result.total_realized_gain,
+        n_holdings=len(holdings),
+        n_combined=len(combined),
+    )
+
+
+# ---------------------------------------------------------------------------
+# `generate-reports` command
+# ---------------------------------------------------------------------------
+@app.command("generate-reports")
+def generate_reports(
+    account: Optional[str] = AccountOption,
+    input_dir: Optional[Path] = InputDirOption,
+    formats: list[ReportFormat] = FormatOption,
+    verbose: bool = VerboseOption,
+) -> None:
+    """Generate CSV / Excel / PDF reports for the parsed transactions."""
+
+    configure_logging(verbose=verbose)
+
+    ingestion = ingest_input_directory(
+        input_dir=_resolve_input_dir(input_dir),
+        account_filter=account,
+    )
+
+    engine = FifoEngine()
+    fifo_result = engine.process(ingestion.transactions)
+
+    holdings = build_current_holdings(fifo_result.open_lots)
+    combined = build_combined_portfolio(holdings)
+
+    payload = ReportPayload(
+        realized_trades=fifo_result.realized_trades,
+        holdings=holdings,
+        combined_portfolio=combined,
+        account_names=ingestion.accounts,
+    )
+
+    manager = ReportManager()
+    written = manager.write(
+        payload=payload,
+        formats=_expand_formats(formats),
+    )
+
+    typer.echo("\nGenerated reports:")
+    for path in written:
+        typer.echo(f"  - {path}")
+    typer.echo("")
+
+
+# ---------------------------------------------------------------------------
+# Output helpers
+# ---------------------------------------------------------------------------
+def _print_summary(
+    *,
+    accounts: list[str],
+    n_transactions: int,
+    n_realized: int,
+    total_realized,
+    n_holdings: int,
+    n_combined: int,
+) -> None:
+    """Pretty-print the post-processing summary to stdout."""
+
+    typer.echo("")
+    typer.echo("Portfolio Ledger - Processing Summary")
+    typer.echo("=" * 50)
+    typer.echo(f"Accounts processed     : {', '.join(accounts) or '(none)'}")
+    typer.echo(f"Transactions ingested  : {n_transactions}")
+    typer.echo(f"Realized trades (FIFO) : {n_realized}")
+    typer.echo(
+        "Total realized G/L     : "
+        + format_us_decimal(total_realized, "0.01", thousands=True)
+    )
+    typer.echo(f"Open positions         : {n_holdings}")
+    typer.echo(f"Combined ISINs         : {n_combined}")
+    typer.echo("")
+
+
+# ---------------------------------------------------------------------------
+# Entry point - allows `python -m app.main`.
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    app()
