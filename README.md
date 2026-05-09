@@ -22,6 +22,11 @@ class registered in `app/parsers/registry.py`.
   PDF).
 - Generates an opt-in **per-lot Cost Basis Transfer** report for
   broker-to-broker transfers (e.g. Scalable Capital -> IBKR).
+- Detects and elides paired broker-internal "switch" transfers so the
+  original tax lots survive sub-account moves (see
+  [Broker switch transfers](#broker-switch-transfers-scalable-capital)).
+- Handles `Corporate action` rows with a zero-cost-basis acquisition
+  model for inbound (free / spin-off / scrip) shares.
 - All money math uses `Decimal` - never `float`.
 - Output uses US decimal formatting (`.` decimal, `,` thousands).
 - Single-file Typer CLI with `process`, `generate-reports`, and
@@ -101,6 +106,75 @@ row carries `Account`, `ISIN`, `Symbol`, `Acquisition Date`,
 `Quantity` and `Cost per Share` for each row on the receiving broker's
 intake form; the `Cost Basis` column is shown only as a sanity check.
 
+### Broker switch transfers (Scalable Capital)
+
+Scalable Capital occasionally re-shelves shares between its two
+sub-accounts (the regular brokerage account and the savings/depot
+account). The export records each move as **two paired
+`Security transfer` rows**:
+
+1. an outbound leg with negative quantity, dated when the shares
+   leave the source sub-account; its `reference` is a plain broker
+   movement id, e.g. `WWUM 00596749782`.
+2. an inbound leg with the same absolute quantity and ISIN, typically
+   one business day later; its `reference` carries the
+   `SWITCH-...-WDP` marker.
+
+Tax-lot wise the shares never left the customer - the broker preserves
+the **original lots** across the move. If the engine processed both
+legs naively it would pop the original (often cheap) lots on the
+outbound and create one expensive lot at the inbound day's price,
+silently destroying the cost basis for every later sell on that ISIN.
+
+To prevent that, ingestion runs `app.services.transfer_pairs.collapse_switch_pairs`
+right after the chronological sort. The detection rule is:
+
+- The inbound leg's `reference` starts with `SWITCH-`, **and**
+- there is an outbound `Security transfer` for the same
+  `(account, ISIN, |quantity|)` within ≤ 7 days (closest match wins).
+
+When both conditions hold, **both legs are dropped** before they reach
+the tax-lot engine, so the original lots stay in the queue with their
+true acquisition prices and dates.
+
+Unpaired transfers are intentionally left alone:
+
+- A real **outbound** transfer to another broker (no later `SWITCH-`
+  inbound) flows through the engine, consuming lots in FIFO order and
+  adjusting invested capital by the broker-reported transfer amount.
+- A real **inbound** transfer from another broker (the `reference`
+  does not start with `SWITCH-`) is admitted as a fresh acquisition at
+  the broker's transfer price.
+
+Each collapsed pair is logged at INFO level by `transfer_pairs`; the
+ingestion summary line includes a `collapsed N switch-pair leg(s)`
+field so you can see at a glance how many rows were elided.
+
+### Corporate actions
+
+`Corporate action` rows in the Scalable Capital export move shares
+without cash (the `amount` and `price` columns are always `0`). They
+typically appear for stock splits, scrip dividends, ticker changes
+and spin-offs. Modelling each variant precisely (in particular the
+German Finanzamt's proportional cost-basis split for spin-offs) would
+require per-action ratios that the broker does not publish in the
+export, so the engine uses a deliberately simple rule:
+
+- `+qty` rows are admitted as **zero cost basis acquisitions**. Any
+  later sell of those shares therefore books the full proceeds as
+  realized gain. This is conservative for tax purposes (it
+  over-states gain), but fully automatic.
+- `-qty` rows (the broker reducing a parent position when shares are
+  converted into a successor security) are **ignored**. The original
+  parent lots stay in the queue, so a later sell of the parent uses
+  its full original cost basis.
+
+If you need the exact German proportional split for a particular
+spin-off, override the realized-gain row in the destination broker's
+intake form using the
+[Cost Basis Transfer report](#cost-basis-transfer-report-broker-to-broker-transfers)
+as a starting point.
+
 ## Running tests
 
 ```bash
@@ -109,13 +183,18 @@ python -m pytest tests/ -q
 
 ## Environment overrides
 
-Two env vars let you point the tool at non-default directories - useful
-when running inside Docker:
+Three env vars let you point the tool at non-default directories or
+narrow the admitted broker transaction types - useful when running
+inside Docker:
 
-| Variable                          | Purpose                            |
-| --------------------------------- | ---------------------------------- |
-| `PORTFOLIO_LEDGER_INPUT_DIR`      | Override the default `./input/`.   |
-| `PORTFOLIO_LEDGER_OUTPUT_DIR`     | Override the default `./output/`.  |
+| Variable                              | Purpose                            |
+| ------------------------------------- | ---------------------------------- |
+| `PORTFOLIO_LEDGER_INPUT_DIR`          | Override the default `./input/`.   |
+| `PORTFOLIO_LEDGER_OUTPUT_DIR`         | Override the default `./output/`.  |
+| `PORTFOLIO_LEDGER_TRANSACTION_TYPES`  | Comma-separated list of raw broker `type` values to admit (default includes `Buy,Sell,Savings plan,Distribution,Taxes,Tax,Security transfer,Corporate action`). Anything not listed is dropped at parse time. |
+
+A starter `.env.template` is committed at the repo root - copy it to
+`.env` and edit if you need to override the defaults.
 
 ## Adding a new broker
 
