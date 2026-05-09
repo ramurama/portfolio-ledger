@@ -2,12 +2,14 @@
 
 After the FIFO engine has run, each (account, ISIN) has a list of open
 lots representing un-sold acquisition fragments. This module folds those
-open lots into one row per (account, ISIN), exposing the four metrics
+open lots into one row per (account, ISIN), exposing the metrics
 required by the project specification:
 
     * total shares
     * average purchase price (weighted by lot size)
     * invested amount  (= total_shares * average_purchase_price)
+    * portfolio percentage  (this position's share of the account's
+                             total invested capital)
     * remaining lot count
 
 The result is a plain `list[HoldingRow]` so the report writers can turn
@@ -25,6 +27,11 @@ from app.models import OpenLot
 from app.utils.decimal_utils import ZERO, safe_divide
 
 
+# Used as the multiplier when converting a fraction into a percentage.
+# Pre-built so we never accidentally introduce a `float`.
+_HUNDRED: Decimal = Decimal("100")
+
+
 @dataclass(frozen=True)
 class HoldingRow:
     """Aggregated current holding for one (account, ISIN)."""
@@ -35,6 +42,13 @@ class HoldingRow:
     total_shares: Decimal
     average_purchase_price: Decimal
     invested_amount: Decimal
+    # Share of *this account's* total invested capital that is tied up
+    # in this security, expressed as a percentage in the range [0, 100].
+    # We compute it per-account (not across the family) because a per-
+    # account allocation view is what an investor actually rebalances
+    # against - the family-level equivalent lives in the combined
+    # portfolio report.
+    portfolio_percentage: Decimal
     remaining_lots: int
 
 
@@ -48,41 +62,83 @@ def build_current_holdings(open_lots: Iterable[OpenLot]) -> list[HoldingRow]:
         avg_price = sum(remaining_shares_i * cost_per_share_i)
                     / sum(remaining_shares_i)
 
-    `safe_divide` guards against zero-denominator edge cases (e.g. a lot
-    that was fully consumed but somehow not popped - belt-and-braces).
+    The portfolio percentage is then:
+
+        pct = invested_amount / sum(invested_amount for that account) * 100
+
+    `safe_divide` guards against zero-denominator edge cases (e.g. a
+    fully-consumed lot that somehow lingered, or an account that has
+    nothing invested yet).
     """
 
-    # First pass: bucket the lots.
+    # First pass: bucket the lots so subsequent passes work in O(N).
     buckets: dict[tuple[str, str], list[OpenLot]] = defaultdict(list)
     for lot in open_lots:
         buckets[(lot.account_name, lot.isin)].append(lot)
 
-    rows: list[HoldingRow] = []
-    for (account_name, isin), lots in buckets.items():
-        total_shares = sum((lot.remaining_shares for lot in lots), start=ZERO)
-        invested_amount = sum(
-            (lot.remaining_cost_basis for lot in lots), start=ZERO
-        )
-        avg_price = safe_divide(invested_amount, total_shares)
+    # Second pass: per-account total invested capital. Done up-front so
+    # the row-building pass can compute each row's percentage in one go.
+    account_totals = _compute_account_totals(buckets)
 
-        # Use the most recent symbol we have for that ISIN. Symbols can
-        # drift slightly over time (Reuters renames, etc.) so always
-        # picking the freshest value yields the friendliest report.
-        symbol = max(lots, key=lambda lot: lot.buy_date).symbol
-
-        rows.append(
-            HoldingRow(
-                account_name=account_name,
-                isin=isin,
-                symbol=symbol,
-                total_shares=total_shares,
-                average_purchase_price=avg_price,
-                invested_amount=invested_amount,
-                remaining_lots=len(lots),
-            )
-        )
+    # Third pass: build the rows. Each row knows its own slice of the
+    # owning account's portfolio thanks to `account_totals`.
+    rows = [
+        _build_row(account_name, isin, lots, account_totals[account_name])
+        for (account_name, isin), lots in buckets.items()
+    ]
 
     # Stable sort: account first, then symbol (case-insensitive) so the
     # report reads naturally regardless of insertion order.
     rows.sort(key=lambda r: (r.account_name.lower(), r.symbol.lower(), r.isin))
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def _compute_account_totals(
+    buckets: dict[tuple[str, str], list[OpenLot]],
+) -> dict[str, Decimal]:
+    """Sum invested capital per account across every (account, ISIN)."""
+
+    totals: dict[str, Decimal] = defaultdict(lambda: ZERO)
+    for (account_name, _isin), lots in buckets.items():
+        totals[account_name] += sum(
+            (lot.remaining_cost_basis for lot in lots), start=ZERO
+        )
+    return totals
+
+
+def _build_row(
+    account_name: str,
+    isin: str,
+    lots: list[OpenLot],
+    account_total: Decimal,
+) -> HoldingRow:
+    """Assemble one `HoldingRow` from the lots backing a single ISIN."""
+
+    total_shares = sum((lot.remaining_shares for lot in lots), start=ZERO)
+    invested_amount = sum(
+        (lot.remaining_cost_basis for lot in lots), start=ZERO
+    )
+    average_price = safe_divide(invested_amount, total_shares)
+
+    # Multiply BEFORE dividing to preserve full Decimal precision; we
+    # only quantize down to 2 decimal places when the value is rendered.
+    portfolio_pct = safe_divide(invested_amount * _HUNDRED, account_total)
+
+    # Use the most recent symbol we have for that ISIN. Symbols can
+    # drift slightly over time (Reuters renames, etc.) so always
+    # picking the freshest value yields the friendliest report.
+    symbol = max(lots, key=lambda lot: lot.buy_date).symbol
+
+    return HoldingRow(
+        account_name=account_name,
+        isin=isin,
+        symbol=symbol,
+        total_shares=total_shares,
+        average_purchase_price=average_price,
+        invested_amount=invested_amount,
+        portfolio_percentage=portfolio_pct,
+        remaining_lots=len(lots),
+    )

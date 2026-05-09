@@ -26,11 +26,41 @@ other code should call `str.replace` on numbers.
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
-from typing import Optional
+from typing import Final, Optional
 
 # A pre-built zero used as a safe default. Decimal is immutable so sharing
 # the instance is cheap and avoids re-parsing "0" thousands of times.
 ZERO: Decimal = Decimal("0")
+
+
+# ---------------------------------------------------------------------------
+# Currency formatting
+# ---------------------------------------------------------------------------
+# Map ISO-4217 currency codes to the symbol displayed in reports. We only
+# list the currencies we are likely to encounter in scope; unknown codes
+# fall back to "<CODE> " prefix so the value still tells the reader what
+# currency it is in even if we have no glyph for it.
+CURRENCY_SYMBOLS: Final[dict[str, str]] = {
+    "EUR": "\u20ac",   # €
+    "USD": "$",
+    "GBP": "\u00a3",   # £
+    "JPY": "\u00a5",   # ¥
+    "CHF": "CHF ",
+}
+
+
+def currency_symbol(currency: Optional[str]) -> str:
+    """Return the display symbol for a given ISO-4217 code.
+
+    Unknown currencies render as ``"<CODE> "`` so the value is still
+    self-describing rather than silently dropping the unit. ``None``
+    returns an empty string, which is useful for unitless cells.
+    """
+
+    if not currency:
+        return ""
+    code = currency.upper()
+    return CURRENCY_SYMBOLS.get(code, f"{code} ")
 
 
 def parse_german_decimal(raw: Optional[str]) -> Optional[Decimal]:
@@ -125,6 +155,35 @@ def format_us_decimal(
     if frac_part:
         return f"{sign}{int_part}.{frac_part}"
     return f"{sign}{int_part}"
+
+
+def format_money(
+    value: Optional[Decimal],
+    currency: Optional[str],
+    quantize: Optional[str] = "0.01",
+) -> str:
+    """Format `value` with the appropriate currency symbol prepended.
+
+    The symbol always sits between the optional minus sign and the
+    digits, i.e. ``-€1,234.56`` rather than ``€-1,234.56`` - that
+    matches how German / European bank statements typeset negatives
+    and reads naturally for both gains and losses.
+
+    `None` is returned as an empty string so reports can distinguish
+    "missing" from "zero".
+    """
+
+    if value is None:
+        return ""
+
+    formatted = format_us_decimal(value, quantize, thousands=True)
+    symbol = currency_symbol(currency)
+
+    if not symbol:
+        return formatted
+    if formatted.startswith("-"):
+        return "-" + symbol + formatted[1:]
+    return symbol + formatted
 
 
 def safe_divide(numerator: Decimal, denominator: Decimal) -> Decimal:

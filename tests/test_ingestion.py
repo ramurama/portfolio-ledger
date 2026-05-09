@@ -7,9 +7,11 @@ exports would double-count every transaction.
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 from app.services.ingestion import (
+    extract_source_date,
     ingest_input_directory,
     select_latest_export,
 )
@@ -108,3 +110,42 @@ class TestIngestInputDirectory:
         )
         assert ramu_old in result.files_skipped
         assert set(result.accounts) == {"ramu", "rakshana"}
+
+    def test_source_dates_populated_per_account(self, tmp_path: Path) -> None:
+        """Each account's source date should reflect the chosen export."""
+        (tmp_path / "ramu").mkdir()
+        (tmp_path / "rakshana").mkdir()
+
+        _write_csv(tmp_path / "ramu" / "2024-01-01_export.csv")
+        _write_csv(tmp_path / "ramu" / "2026-05-09_11-05-03_export.csv")
+        _write_csv(tmp_path / "rakshana" / "2025-12-31_export.csv")
+
+        result = ingest_input_directory(input_dir=tmp_path)
+
+        assert result.source_dates == {
+            "ramu": datetime(2026, 5, 9, 11, 5, 3),
+            "rakshana": datetime(2025, 12, 31),
+        }
+
+
+class TestExtractSourceDate:
+    def test_date_only(self, tmp_path: Path) -> None:
+        path = tmp_path / "2026-05-09_export.csv"
+        path.write_text("noop")
+        assert extract_source_date(path) == datetime(2026, 5, 9)
+
+    def test_date_and_time(self, tmp_path: Path) -> None:
+        path = tmp_path / "2026-05-09_11-05-03_export.csv"
+        path.write_text("noop")
+        assert extract_source_date(path) == datetime(2026, 5, 9, 11, 5, 3)
+
+    def test_no_prefix_returns_none(self, tmp_path: Path) -> None:
+        path = tmp_path / "manual_export.csv"
+        path.write_text("noop")
+        assert extract_source_date(path) is None
+
+    def test_invalid_calendar_date_returns_none(self, tmp_path: Path) -> None:
+        # Regex shape passes but month 13 is not a real month.
+        path = tmp_path / "2026-13-09_export.csv"
+        path.write_text("noop")
+        assert extract_source_date(path) is None

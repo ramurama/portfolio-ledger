@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -53,6 +54,33 @@ logger = get_logger(__name__)
 _FILENAME_TIMESTAMP_RE: re.Pattern[str] = re.compile(
     r"^(?P<stamp>\d{4}-\d{2}-\d{2}(?:_\d{2}-\d{2}-\d{2})?)"
 )
+
+
+def extract_source_date(path: Path) -> Optional[datetime]:
+    """Read the export date out of `path`'s filename.
+
+    Recognises both prefixes the broker uses:
+
+        "2026-05-09_..."           -> datetime(2026, 5, 9)
+        "2026-05-09_11-05-03_..."  -> datetime(2026, 5, 9, 11, 5, 3)
+
+    Returns `None` when the filename does not start with a parseable
+    timestamp - in that case the report just omits the source-date
+    band rather than fabricating a value.
+    """
+
+    match = _FILENAME_TIMESTAMP_RE.match(path.name)
+    if not match:
+        return None
+
+    stamp = match.group("stamp")
+    fmt = "%Y-%m-%d_%H-%M-%S" if "_" in stamp else "%Y-%m-%d"
+    try:
+        return datetime.strptime(stamp, fmt)
+    except ValueError:
+        # Defensive: regex shape matched but the values are not a
+        # valid date (e.g. month 13). Skip silently.
+        return None
 
 
 def _filename_sort_key(path: Path) -> tuple[int, str, str]:
@@ -93,6 +121,11 @@ class IngestionResult:
     accounts: list[str] = field(default_factory=list)
     files_processed: list[Path] = field(default_factory=list)
     files_skipped: list[Path] = field(default_factory=list)
+    # account_name -> datetime extracted from the chosen export's
+    # filename. Populated only for files whose name follows the
+    # documented `YYYY-MM-DD[_HH-MM-SS]` convention; missing entries
+    # are intentional rather than an error.
+    source_dates: dict[str, datetime] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +273,13 @@ def _ingest_account(account_dir: Path, result: IngestionResult) -> None:
 
     result.transactions.extend(transactions)
     result.files_processed.append(latest)
+
+    # Capture the export date so reports can show "data as of ..." -
+    # crucial for tax/audit traceability when reports are filed away.
+    source_date = extract_source_date(latest)
+    if source_date is not None:
+        result.source_dates[account_name] = source_date
+
     logger.info(
         "  - %s -> %d transaction(s) [latest export selected]",
         latest.name, len(transactions),

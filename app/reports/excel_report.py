@@ -1,21 +1,25 @@
 """Excel renderer using openpyxl.
 
-The output is intentionally plain - one worksheet per report - but with
-a few quality-of-life touches:
+The renderer supports two modes through a single entry-point:
+
+    * Single-section reports (e.g. Current Holdings) - pass one
+      `ExcelSection` and the workbook gets one sheet.
+    * Multi-section reports (e.g. per-account FIFO) - pass several
+      `ExcelSection` objects and each lands on its own sheet.
+
+Each sheet has the same quality-of-life touches:
 
     * Bold header row with a coloured fill.
     * Frozen first row so headers stay visible while scrolling.
-    * Column widths auto-sized to the longest cell content.
+    * Column widths approximated from the longest cell content.
     * Right-aligned numeric columns.
-
-Producing an `.xlsx` rather than a CSV lets recipients keep formatting
-(thousand separators, alignment) when they hand the file off to an
-accountant or tax advisor.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Sequence
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -34,39 +38,74 @@ _HEADER_FONT = Font(bold=True, color="FFFFFF")
 _NUMERIC_ALIGNMENT = Alignment(horizontal="right")
 
 
+@dataclass(frozen=True)
+class ExcelSection:
+    """One worksheet's worth of content."""
+
+    sheet_name: str
+    headers: list[str]
+    body: list[list[str]]
+
+
 def write_excel(
     output_path: Path,
-    sheet_name: str,
-    headers: list[str],
-    body: list[list[str]],
+    sections: Sequence[ExcelSection],
 ) -> Path:
-    """Write a single-sheet Excel workbook to `output_path`."""
+    """Write a workbook with one sheet per `ExcelSection` to `output_path`.
+
+    `sections` must contain at least one entry. Empty sections still
+    produce a sheet with the headers - this matters for per-account
+    FIFO reports where an account may legitimately have zero trades.
+    """
+
+    if not sections:
+        raise ValueError("write_excel requires at least one ExcelSection")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     wb = Workbook()
-    ws = wb.active
-    if ws is None:
-        # Defensive: openpyxl always returns a sheet, but the type stub
-        # reports it as Optional. Guarding makes mypy / Pyright happy.
-        ws = wb.create_sheet()
-    ws.title = sheet_name[:31]  # Excel caps sheet names at 31 chars.
 
-    _write_headers(ws, headers)
-    _write_body(ws, headers, body)
-    _apply_column_widths(ws, headers, body)
+    # Workbook() always starts with one default sheet; we replace its
+    # title / content with the first section to avoid an empty sheet
+    # being left behind.
+    for idx, section in enumerate(sections):
+        if idx == 0:
+            ws = wb.active
+            if ws is None:  # pragma: no cover - defensive
+                ws = wb.create_sheet()
+        else:
+            ws = wb.create_sheet()
 
-    # Freeze headers - the "A2" anchor means "scroll body, keep row 1".
-    ws.freeze_panes = "A2"
+        # Excel caps sheet names at 31 characters and forbids a few
+        # punctuation chars. Strip those defensively.
+        ws.title = _sanitize_sheet_name(section.sheet_name)
+
+        _write_headers(ws, section.headers)
+        _write_body(ws, section.headers, section.body)
+        _apply_column_widths(ws, section.headers, section.body)
+
+        # Freeze the header row - "A2" means "scroll body, keep row 1".
+        ws.freeze_panes = "A2"
 
     wb.save(output_path)
-    logger.info("Wrote Excel report -> %s (%d rows)", output_path, len(body))
+    total_rows = sum(len(s.body) for s in sections)
+    logger.info(
+        "Wrote Excel report -> %s (%d sheet(s), %d row(s) total)",
+        output_path, len(sections), total_rows,
+    )
     return output_path
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+def _sanitize_sheet_name(raw: str) -> str:
+    """Make a sheet name safe and within Excel's 31-char limit."""
+    forbidden = set(r"[]:*?/\\")
+    cleaned = "".join("_" if ch in forbidden else ch for ch in raw)
+    return cleaned[:31] or "Sheet"
+
+
 def _write_headers(ws: Worksheet, headers: list[str]) -> None:
     """Render the styled header row."""
 
@@ -93,7 +132,7 @@ def _write_body(
         idx for idx, header in enumerate(headers, start=1)
         if any(token in header.lower() for token in (
             "price", "amount", "shares", "cost", "proceeds",
-            "gain", "loss", "invested", "lots",
+                    "gain", "loss", "invested", "%",
         ))
     }
 

@@ -15,12 +15,14 @@ Docker image we will add later, where `/data/input` is mounted).
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 import typer
 
-from app.config import INPUT_DIR
+from app.config import DEFAULT_CURRENCY, INPUT_DIR
+from app.models import Transaction
 from app.reports import ReportFormat, ReportManager, ReportPayload
 from app.services import (
     FifoEngine,
@@ -28,7 +30,7 @@ from app.services import (
     build_current_holdings,
     ingest_input_directory,
 )
-from app.utils.decimal_utils import format_us_decimal
+from app.utils.decimal_utils import format_money
 from app.utils.logging import configure_logging, get_logger
 
 # `add_completion=False` keeps the CLI footprint minimal - we do not
@@ -78,6 +80,33 @@ def _resolve_input_dir(override: Optional[Path]) -> Path:
     return override.resolve() if override else INPUT_DIR
 
 
+def _detect_currency(transactions: Iterable[Transaction]) -> str:
+    """Pick the dominant currency code present in the ingested data.
+
+    Scalable Capital DE always reports EUR, but writing this generically
+    lets us load future broker exports without hard-coding a currency.
+    If no transactions are present (e.g. an empty filtered run) we fall
+    back to the project default. Mixed-currency exports log a warning
+    so the operator knows the report uses one currency throughout.
+    """
+
+    counter: Counter[str] = Counter(
+        tx.currency.upper() for tx in transactions if tx.currency
+    )
+    if not counter:
+        return DEFAULT_CURRENCY
+
+    if len(counter) > 1:
+        logger.warning(
+            "Multiple currencies present in ingestion (%s). Reports will "
+            "use the most common one; consider splitting accounts that "
+            "trade in different currencies.",
+            dict(counter),
+        )
+
+    return counter.most_common(1)[0][0]
+
+
 def _expand_formats(formats: list[ReportFormat]) -> list[ReportFormat]:
     """Expand `--format all` (which Typer cannot model directly).
 
@@ -125,12 +154,14 @@ def process(
 
     holdings = build_current_holdings(fifo_result.open_lots)
     combined = build_combined_portfolio(holdings)
+    currency = _detect_currency(ingestion.transactions)
 
     _print_summary(
         accounts=ingestion.accounts,
         n_transactions=len(ingestion.transactions),
         n_realized=len(fifo_result.realized_trades),
         total_realized=fifo_result.total_realized_gain,
+        currency=currency,
         n_holdings=len(holdings),
         n_combined=len(combined),
     )
@@ -166,6 +197,8 @@ def generate_reports(
         holdings=holdings,
         combined_portfolio=combined,
         account_names=ingestion.accounts,
+        source_dates=ingestion.source_dates,
+        currency=_detect_currency(ingestion.transactions),
     )
 
     manager = ReportManager()
@@ -189,6 +222,7 @@ def _print_summary(
     n_transactions: int,
     n_realized: int,
     total_realized,
+    currency: str,
     n_holdings: int,
     n_combined: int,
 ) -> None:
@@ -199,10 +233,12 @@ def _print_summary(
     typer.echo("=" * 50)
     typer.echo(f"Accounts processed     : {', '.join(accounts) or '(none)'}")
     typer.echo(f"Transactions ingested  : {n_transactions}")
+    typer.echo(f"Reporting currency     : {currency}")
     typer.echo(f"Realized trades (FIFO) : {n_realized}")
     typer.echo(
         "Total realized G/L     : "
-        + format_us_decimal(total_realized, "0.01", thousands=True)
+        + format_money(total_realized, currency)
+        + "  (PRE-TAX; withholding tax tracked separately)"
     )
     typer.echo(f"Open positions         : {n_holdings}")
     typer.echo(f"Combined ISINs         : {n_combined}")

@@ -14,19 +14,32 @@ Crucially, we use `collections.deque`:
     * Index access via `[0]` is O(1) too, which is all we need for the
       "consume from the front" pattern.
 
-Cost basis treatment
---------------------
-The CSV reports `total_amount` *including* fees on the Buy side
-(negative value: e.g. -241,99 for shares costing 241,00 plus 0,99 fee).
-We therefore use `abs(total_amount) / quantity` as the per-share cost
-basis - this includes the fee pro-rata, which is the correct behaviour
-for German Abgeltungsteuer-style realized gain calculations.
+Cost basis and proceeds treatment (Scalable Capital DE)
+-------------------------------------------------------
+For Scalable Capital exports, the CSV `amount` column equals
+`shares * price` exactly on every trade row - i.e. it is the **gross**
+amount, *excluding* the broker's `fee` and `tax` columns:
 
-For the Sell side we use `total_amount / quantity_sold` (without the
-fees adjustment because the broker already deducted fees from the
-proceeds on the row). Tax withheld on a Sell is *not* netted against
-realized gain - it is reported as its own Tax transaction and left out
-of FIFO. This matches the project specification.
+    Buy:  amount = -(shares * price)        (fee reported separately)
+    Sell: amount =  (shares * price)        (fee + tax reported separately)
+
+The engine therefore treats:
+
+    cost_per_share     = abs(buy_amount)  / buy_quantity
+    proceeds_per_share = abs(sell_amount) / sell_quantity
+
+Both expressions are the *gross* per-share value. Withheld tax on the
+Sell row is captured by the parser as its own `TransactionType.TAX`
+event and is NOT subtracted from sale_proceeds. This means the
+`realized_gain_loss` reported by the engine is **PRE-TAX** (and, for
+Scalable Capital, also pre-fee since fees are nearly always 0). The
+report writers surface this clearly to the operator via the column
+header (`Realized Gain/Loss (Pre-Tax)`) and a footnote on the PDF.
+
+If a future broker reports `amount` net of fees / tax, this engine
+should still work correctly - the math is per-share and the gross/net
+distinction collapses for that broker. The only thing that would need
+to change is the column header / disclaimer.
 
 Partial lot consumption
 -----------------------
@@ -127,9 +140,12 @@ class FifoEngine:
             )
             return
 
-        # Cost basis includes fees pro-rata. We use abs(total_amount) so
-        # the sign convention used by the broker (negative for cash
-        # outflow) does not flip our cost into a credit.
+        # Per-share **gross** cost basis (= price for Scalable Capital).
+        # We use abs(total_amount) so the broker's sign convention
+        # (negative for cash outflow) does not flip cost into credit.
+        # Buy-side fees are reported separately by the parser and are
+        # intentionally NOT folded into cost basis - this keeps the
+        # FIFO math symmetric with the Sell side and easy to audit.
         cost_per_share = safe_divide(abs(tx.total_amount), tx.quantity)
 
         lot = OpenLot(
@@ -163,10 +179,11 @@ class FifoEngine:
         queue = self._queue_for(tx)
         remaining_to_sell: Decimal = tx.quantity
 
-        # Per-share proceeds for THIS sell. We use the absolute value of
-        # `total_amount` divided by the share count - this matches the
-        # broker's net proceeds (gross_sale - fees - withheld_tax) and
-        # is the value you would actually see hit your cash account.
+        # Per-share **gross** proceeds for THIS sell. For Scalable
+        # Capital `total_amount` equals `shares * price`, i.e. it is
+        # already the gross figure before withholding tax / fees.
+        # Tax events for this sell are emitted separately by the parser
+        # so they remain visible without polluting the cost-basis math.
         proceeds_per_share = safe_divide(abs(tx.total_amount), tx.quantity)
 
         while remaining_to_sell > ZERO:

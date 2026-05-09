@@ -8,6 +8,7 @@ to produce one row per ISIN. The output captures:
     * combined total shares
     * combined weighted-average purchase price
     * combined total invested capital
+    * family-level percentage of total invested capital
 
 The schema mirrors what the PDF / Excel report needs while remaining a
 plain list of dataclasses so unit tests can assert on the values without
@@ -25,6 +26,11 @@ from app.services.holdings import HoldingRow
 from app.utils.decimal_utils import ZERO, safe_divide
 
 
+# Pre-built once so we never accidentally mix Decimal with float math
+# when scaling fractions into percentages.
+_HUNDRED: Decimal = Decimal("100")
+
+
 @dataclass(frozen=True)
 class CombinedHoldingRow:
     """One row in the combined family portfolio report."""
@@ -39,6 +45,11 @@ class CombinedHoldingRow:
     combined_shares: Decimal
     combined_average_price: Decimal
     total_invested: Decimal
+    # Share of the *family's* total invested capital that sits in this
+    # ISIN, expressed as a percentage in the range [0, 100]. Computed
+    # by `build_combined_portfolio` once the family-wide total is known.
+    # This is the family-level analogue of `HoldingRow.portfolio_percentage`.
+    family_percentage: Decimal
 
     @property
     def account_names(self) -> list[str]:
@@ -73,18 +84,34 @@ class _IsinAggregate:
 def build_combined_portfolio(
     holdings: Iterable[HoldingRow],
 ) -> list[CombinedHoldingRow]:
-    """Pivot per-account holdings into one combined row per ISIN."""
+    """Pivot per-account holdings into one combined row per ISIN.
+
+    A second pass computes each row's share of the *family-wide* total
+    invested capital, so the report can show how concentrated the
+    family's wealth is in any one security.
+    """
 
     aggregates: dict[str, _IsinAggregate] = defaultdict(_IsinAggregate)
     for row in holdings:
         agg = aggregates.setdefault(row.isin, _IsinAggregate(isin=row.isin))
         agg.add(row)
 
+    # Family-wide invested capital. Computed up-front so each row can
+    # trivially derive its own slice in the loop below.
+    family_total = sum(
+        (agg.total_invested for agg in aggregates.values()), start=ZERO
+    )
+
     combined: list[CombinedHoldingRow] = []
     for agg in aggregates.values():
         # Weighted average across accounts uses the same formula as
         # `build_current_holdings` - just at one level higher.
         avg_price = safe_divide(agg.total_invested, agg.combined_shares)
+
+        # Multiply BEFORE dividing to preserve full Decimal precision.
+        family_pct = safe_divide(
+            agg.total_invested * _HUNDRED, family_total
+        )
 
         combined.append(
             CombinedHoldingRow(
@@ -94,6 +121,7 @@ def build_combined_portfolio(
                 combined_shares=agg.combined_shares,
                 combined_average_price=avg_price,
                 total_invested=agg.total_invested,
+                family_percentage=family_pct,
             )
         )
 

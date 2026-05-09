@@ -11,6 +11,8 @@ from decimal import Decimal
 import pytest
 
 from app.utils.decimal_utils import (
+    currency_symbol,
+    format_money,
     format_us_decimal,
     parse_german_decimal,
     parse_german_decimal_or_zero,
@@ -76,3 +78,47 @@ class TestSafeDivide:
 
     def test_zero_denominator_returns_zero(self) -> None:
         assert safe_divide(Decimal("10"), Decimal("0")) == Decimal("0")
+
+
+class TestCurrencySymbol:
+    def test_known_codes(self) -> None:
+        assert currency_symbol("EUR") == "\u20ac"  # €
+        assert currency_symbol("USD") == "$"
+        assert currency_symbol("GBP") == "\u00a3"  # £
+
+    def test_case_insensitive(self) -> None:
+        assert currency_symbol("eur") == "\u20ac"
+
+    def test_unknown_code_falls_back_to_iso(self) -> None:
+        # Falls back to "<CODE> " so the value is still self-describing.
+        assert currency_symbol("AUD") == "AUD "
+
+    def test_empty_returns_empty(self) -> None:
+        assert currency_symbol("") == ""
+        assert currency_symbol(None) == ""
+
+
+class TestFormatMoney:
+    def test_eur_prefix(self) -> None:
+        assert format_money(Decimal("1234.56"), "EUR") == "\u20ac1,234.56"
+
+    def test_negative_keeps_sign_before_symbol(self) -> None:
+        # Convention: -€1,234.56 (sign first, then symbol, then magnitude).
+        assert format_money(Decimal("-1234.56"), "EUR") == "-\u20ac1,234.56"
+
+    def test_usd_prefix(self) -> None:
+        assert format_money(Decimal("99.9"), "USD") == "$99.90"
+
+    def test_unknown_currency_uses_iso_prefix(self) -> None:
+        assert format_money(Decimal("10"), "XAU") == "XAU 10.00"
+
+    def test_none_value_returns_empty(self) -> None:
+        assert format_money(None, "EUR") == ""
+
+    def test_no_currency_returns_plain_number(self) -> None:
+        # When no currency is given we still want a sensible string.
+        assert format_money(Decimal("12.5"), None) == "12.50"
+        assert format_money(Decimal("12.5"), "") == "12.50"
+
+    def test_custom_quantize(self) -> None:
+        assert format_money(Decimal("1.2345"), "EUR", "0.0001") == "\u20ac1.2345"
