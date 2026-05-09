@@ -27,6 +27,7 @@ from app.reports import ReportFormat, ReportManager, ReportPayload
 from app.services import (
     FifoEngine,
     build_combined_portfolio,
+    build_cost_basis_rows,
     build_current_holdings,
     ingest_input_directory,
 )
@@ -208,6 +209,61 @@ def generate_reports(
     )
 
     typer.echo("\nGenerated reports:")
+    for path in written:
+        typer.echo(f"  - {path}")
+    typer.echo("")
+
+
+# ---------------------------------------------------------------------------
+# `generate-cost-basis` command
+# ---------------------------------------------------------------------------
+@app.command("generate-cost-basis")
+def generate_cost_basis(
+    account: Optional[str] = AccountOption,
+    input_dir: Optional[Path] = InputDirOption,
+    formats: list[ReportFormat] = FormatOption,
+    verbose: bool = VerboseOption,
+) -> None:
+    """Generate the per-lot Cost Basis Transfer report.
+
+    This is a specialised, infrequent artefact used when transferring
+    assets between brokers (e.g. Scalable Capital -> IBKR). The
+    receiving broker requires the acquisition price of EACH still-held
+    lot - not the per-ISIN average shown by the regular holdings report
+    - so this command projects every still-open FIFO lot onto its own
+    row and writes one file per requested format under
+    `output/{csv,excel,pdf}/cost_basis_transfer_{stamp}.*`.
+
+    Reuses the same ingestion + FIFO pipeline as `generate-reports`,
+    but writes only the cost-basis report.
+    """
+
+    configure_logging(verbose=verbose)
+
+    ingestion = ingest_input_directory(
+        input_dir=_resolve_input_dir(input_dir),
+        account_filter=account,
+    )
+
+    engine = FifoEngine()
+    fifo_result = engine.process(ingestion.transactions)
+
+    cost_basis = build_cost_basis_rows(fifo_result.open_lots)
+
+    payload = ReportPayload(
+        cost_basis=cost_basis,
+        account_names=ingestion.accounts,
+        source_dates=ingestion.source_dates,
+        currency=_detect_currency(ingestion.transactions),
+    )
+
+    manager = ReportManager()
+    written = manager.write_cost_basis(
+        payload=payload,
+        formats=_expand_formats(formats),
+    )
+
+    typer.echo("\nGenerated cost-basis report(s):")
     for path in written:
         typer.echo(f"  - {path}")
     typer.echo("")

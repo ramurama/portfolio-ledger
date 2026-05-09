@@ -23,6 +23,7 @@ from typing import Iterable
 
 from app.config import PRICE_QUANTIZE, SHARE_QUANTIZE
 from app.models import RealizedTrade
+from app.services.cost_basis import CostBasisRow
 from app.services.holdings import HoldingRow
 from app.services.portfolio import CombinedHoldingRow
 from app.utils.decimal_utils import format_money, format_us_decimal
@@ -205,4 +206,49 @@ def combined_rows(
             ]
         )
         body.append(record)
+    return body
+
+
+# ---------------------------------------------------------------------------
+# Cost-basis transfer report (one row per FIFO open lot)
+# ---------------------------------------------------------------------------
+COST_BASIS_HEADERS: list[str] = [
+    "Account",
+    "ISIN",
+    "Symbol",
+    "Acquisition Date",
+    "Quantity",
+    # The cost-basis report is the only place we explicitly call out a
+    # per-LOT price; "Cost per Share" is the canonical IBKR-form term.
+    "Cost per Share",
+    "Cost Basis",
+]
+
+
+def cost_basis_rows(
+    rows: Iterable[CostBasisRow],
+    currency: str,
+) -> list[list[str]]:
+    """Render the cost-basis table body in `currency`.
+
+    Quantity uses the standard 6-dp share quantize so fractional
+    savings-plan units render exactly as the broker reports them. Cost
+    per Share uses the 4-dp price quantize - that is the precision IBKR
+    accepts on its intake form, and it survives a `quantity * price`
+    multiplication without losing significant figures.
+    """
+
+    body: list[list[str]] = []
+    for r in rows:
+        body.append(
+            [
+                display_account_name(r.account_name),
+                r.isin,
+                r.symbol,
+                r.acquisition_date.strftime("%Y-%m-%d"),
+                format_us_decimal(r.quantity, SHARE_QUANTIZE, thousands=True),
+                format_money(r.cost_per_share, currency, PRICE_QUANTIZE),
+                format_money(r.cost_basis, currency),
+            ]
+        )
     return body

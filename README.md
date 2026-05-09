@@ -16,11 +16,14 @@ class registered in `app/parsers/registry.py`.
 - Computes FIFO tax lots using `collections.deque` with full support
   for partial lot consumption.
 - Aggregates current holdings per account and across the family.
-- Renders 3 reports (FIFO realized gains, current holdings, combined
-  family portfolio) in 3 output formats (CSV, Excel, PDF).
+- Renders 3 standard reports (FIFO realized gains, current holdings,
+  combined family portfolio) in 3 output formats (CSV, Excel, PDF).
+- Generates an opt-in **per-lot Cost Basis Transfer** report for
+  broker-to-broker transfers (e.g. Scalable Capital -> IBKR).
 - All money math uses `Decimal` - never `float`.
 - Output uses US decimal formatting (`.` decimal, `,` thousands).
-- Single-file Typer CLI with `process` and `generate-reports` commands.
+- Single-file Typer CLI with `process`, `generate-reports`, and
+  `generate-cost-basis` commands.
 
 ## Project layout
 
@@ -74,6 +77,27 @@ python -m app.main process --verbose
 Reports are written into `output/csv/`, `output/excel/`, `output/pdf/`
 with timestamps in the filename so historical runs do not overwrite
 each other.
+
+### Cost Basis Transfer report (broker-to-broker transfers)
+
+When transferring assets out of Scalable Capital (e.g. into IBKR), the
+receiving broker needs the acquisition price of **each lot** so future
+sells stay tax-matched correctly. The averaged "Current Holdings"
+report is not enough - you need one row per still-open FIFO lot.
+
+```bash
+# Generate one row per open lot in every format
+python -m app.main generate-cost-basis
+
+# Filter or limit formats just like generate-reports
+python -m app.main generate-cost-basis --account ramu -f pdf
+```
+
+Output filenames: `cost_basis_transfer_{stamp}.{csv,xlsx,pdf}`. Each
+row carries `Account`, `ISIN`, `Symbol`, `Acquisition Date`,
+`Quantity`, `Cost per Share`, and `Cost Basis`. Enter
+`Quantity` and `Cost per Share` for each row on the receiving broker's
+intake form; the `Cost Basis` column is shown only as a sanity check.
 
 ## Running tests
 

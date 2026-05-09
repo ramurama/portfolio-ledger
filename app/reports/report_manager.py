@@ -44,6 +44,7 @@ from app.reports import _schema as schema
 from app.reports.csv_report import write_csv
 from app.reports.excel_report import ExcelSection, write_excel
 from app.reports.pdf_report import PdfSection, write_pdf
+from app.services.cost_basis import CostBasisRow
 from app.services.holdings import HoldingRow
 from app.services.portfolio import CombinedHoldingRow
 from app.utils.decimal_utils import ZERO, format_money
@@ -65,6 +66,26 @@ _FIFO_PDF_NOTES: tuple[str, ...] = (
 )
 
 
+# Disclaimer lines shown at the top of the cost-basis transfer PDF.
+# This report exists to support broker-to-broker transfers (e.g.
+# Scalable Capital -> IBKR), so the notes spell out exactly what the
+# operator should enter on the receiving broker's intake form and how
+# the per-share figure was derived.
+_COST_BASIS_PDF_NOTES: tuple[str, ...] = (
+    "One row per still-open FIFO lot. Lots are NOT aggregated by ISIN: "
+    "for IBKR-style cost-basis transfers the receiving broker needs the "
+    "purchase price of EACH lot separately so future sells can be tax-"
+    "matched correctly.",
+    "Cost per Share is the gross per-share acquisition price at the time "
+    "of the original Buy / Savings plan (Scalable Capital reports trade "
+    "amounts gross of withheld tax; broker fees on the Buy side are "
+    "negligible for our exports).",
+    "On the IBKR cost-basis intake form, enter Quantity and Cost per "
+    "Share for each row; Cost Basis (= Quantity x Cost per Share) is "
+    "shown only as a sanity check.",
+)
+
+
 # ---------------------------------------------------------------------------
 # Per-PDF column-width tables
 # ---------------------------------------------------------------------------
@@ -83,6 +104,12 @@ _FIFO_SYMBOL_COL_INDEX: int = 2
 #           InvestedAmount, %
 _HOLDINGS_COL_WIDTHS_MM: list[float] = [20, 25, 68, 26, 34, 32, 26]
 _HOLDINGS_SYMBOL_COL_INDEX: int = 2
+
+# Cost basis transfer: Account, ISIN, Symbol(wrap), AcquisitionDate,
+#                      Quantity, CostPerShare, CostBasis
+# Total = 252mm, comfortably within the 267mm landscape A4 budget.
+_COST_BASIS_COL_WIDTHS_MM: list[float] = [22, 28, 70, 28, 32, 38, 34]
+_COST_BASIS_SYMBOL_COL_INDEX: int = 2
 
 
 # Width budget for landscape A4 minus 30mm of margins.
@@ -150,11 +177,21 @@ class ReportFormat(str, Enum):
 
 @dataclass
 class ReportPayload:
-    """The full set of data the manager renders into reports."""
+    """The full set of data the manager renders into reports.
+
+    Not every command populates every field: `generate-reports` fills
+    `realized_trades`, `holdings`, `combined_portfolio`, while
+    `generate-cost-basis` only fills `cost_basis`. Each `_write_*`
+    helper consumes only the field(s) it needs, so unused fields
+    simply default to empty.
+    """
 
     realized_trades: list[RealizedTrade] = field(default_factory=list)
     holdings: list[HoldingRow] = field(default_factory=list)
     combined_portfolio: list[CombinedHoldingRow] = field(default_factory=list)
+    # Per-lot rows for the IBKR-style cost-basis transfer report. Built
+    # from `FifoResult.open_lots` via `build_cost_basis_rows`.
+    cost_basis: list[CostBasisRow] = field(default_factory=list)
     account_names: list[str] = field(default_factory=list)
     # account_name -> datetime extracted from the input file used. PDF
     # reports render this as a "Source data" band so the operator can
@@ -210,6 +247,36 @@ class ReportManager:
         written.extend(self._write_combined(payload, formats, stamp))
 
         logger.info("Generated %d report file(s).", len(written))
+        return written
+
+    def write_cost_basis(
+        self,
+        payload: ReportPayload,
+        formats: Iterable[ReportFormat],
+        generated_at: datetime | None = None,
+    ) -> list[Path]:
+        """Generate ONLY the cost-basis transfer report.
+
+        Used by the dedicated `generate-cost-basis` CLI command. The
+        cost-basis report is a specialised, infrequent artefact (only
+        produced when actually transferring assets between brokers),
+        so we keep it off the default `write()` pipeline and require
+        the caller to opt-in via this dedicated method.
+        """
+
+        formats = list(formats)
+        if not formats:
+            logger.warning(
+                "ReportManager.write_cost_basis called with no formats"
+            )
+            return []
+
+        stamp = (generated_at or datetime.now()).strftime(
+            REPORT_TIMESTAMP_FORMAT
+        )
+
+        written = self._write_cost_basis(payload, formats, stamp)
+        logger.info("Generated %d cost-basis file(s).", len(written))
         return written
 
     # ------------------------------------------------------------------
@@ -634,6 +701,170 @@ class ReportManager:
                 len(payload.account_names),
             ),
             pdf_wrap_columns=(_COMBINED_SYMBOL_COL_INDEX,),
+        )
+
+    # ------------------------------------------------------------------
+    # Cost-basis transfer (split per account, family-wide footer total)
+    # ------------------------------------------------------------------
+    def _write_cost_basis(
+        self,
+        payload: ReportPayload,
+        formats: list[ReportFormat],
+        stamp: str,
+    ) -> list[Path]:
+        per_account = self._group_cost_basis_by_account(
+            payload.cost_basis, payload.account_names,
+        )
+
+        family_total = sum(
+            (r.cost_basis for r in payload.cost_basis), start=ZERO,
+        )
+        family_footer = {
+            "Total Open Lots (Family)": str(len(payload.cost_basis)),
+            "Total Cost Basis (Family)": format_money(
+                family_total, payload.currency,
+            ),
+        }
+
+        base_filename = f"cost_basis_transfer_{stamp}"
+        title = "Cost Basis Transfer Report"
+        outputs: list[Path] = []
+
+        if ReportFormat.CSV in formats:
+            outputs.append(self._write_cost_basis_csv(
+                per_account, base_filename, payload.currency,
+            ))
+
+        if ReportFormat.EXCEL in formats:
+            outputs.append(self._write_cost_basis_excel(
+                per_account, base_filename, payload.currency,
+            ))
+
+        if ReportFormat.PDF in formats:
+            outputs.append(self._write_cost_basis_pdf(
+                per_account,
+                base_filename,
+                title,
+                payload.source_dates,
+                payload.currency,
+                family_footer,
+            ))
+
+        return outputs
+
+    @staticmethod
+    def _group_cost_basis_by_account(
+        rows: list[CostBasisRow],
+        ordered_account_names: list[str],
+    ) -> list[tuple[str, list[CostBasisRow]]]:
+        """Bucket cost-basis rows per account in `ordered_account_names`
+        order. Mirrors `_group_holdings_by_account` and
+        `_group_trades_by_account` so all per-account-split reports
+        line up identically across formats.
+        """
+
+        buckets: dict[str, list[CostBasisRow]] = defaultdict(list)
+        for row in rows:
+            buckets[row.account_name].append(row)
+
+        ordered: list[tuple[str, list[CostBasisRow]]] = []
+        seen: set[str] = set()
+        for name in ordered_account_names:
+            ordered.append((name, buckets.get(name, [])))
+            seen.add(name)
+
+        for name in sorted(buckets.keys() - seen):
+            ordered.append((name, buckets[name]))
+
+        return ordered
+
+    # ----- Per-format Cost-Basis writers -----------------------------
+    def _write_cost_basis_csv(
+        self,
+        per_account: list[tuple[str, list[CostBasisRow]]],
+        base_filename: str,
+        currency: str,
+    ) -> Path:
+        body: list[list[str]] = []
+        for _account, rows in per_account:
+            body.extend(schema.cost_basis_rows(rows, currency))
+
+        return write_csv(
+            self.csv_dir / f"{base_filename}.csv",
+            schema.COST_BASIS_HEADERS,
+            body,
+        )
+
+    def _write_cost_basis_excel(
+        self,
+        per_account: list[tuple[str, list[CostBasisRow]]],
+        base_filename: str,
+        currency: str,
+    ) -> Path:
+        sections = [
+            ExcelSection(
+                sheet_name=display_account_name(account) or "Unknown",
+                headers=schema.COST_BASIS_HEADERS,
+                body=schema.cost_basis_rows(rows, currency),
+            )
+            for account, rows in per_account
+        ]
+        if not sections:
+            sections = [
+                ExcelSection("Cost Basis", schema.COST_BASIS_HEADERS, [])
+            ]
+
+        return write_excel(self.excel_dir / f"{base_filename}.xlsx", sections)
+
+    def _write_cost_basis_pdf(
+        self,
+        per_account: list[tuple[str, list[CostBasisRow]]],
+        base_filename: str,
+        title: str,
+        source_dates: dict[str, datetime],
+        currency: str,
+        family_footer: dict[str, str],
+    ) -> Path:
+        """One page per account, with a 'Family Total' strip at the end."""
+
+        sections: list[PdfSection] = []
+        for account, rows in per_account:
+            account_basis = sum(
+                (r.cost_basis for r in rows), start=ZERO,
+            )
+            sections.append(
+                PdfSection(
+                    subtitle=f"Account: {display_account_name(account)}",
+                    headers=schema.COST_BASIS_HEADERS,
+                    body=schema.cost_basis_rows(rows, currency),
+                    totals={
+                        "Open Lots": str(len(rows)),
+                        "Total Cost Basis":
+                            format_money(account_basis, currency),
+                    },
+                    col_widths_mm=_COST_BASIS_COL_WIDTHS_MM,
+                    wrap_columns=(_COST_BASIS_SYMBOL_COL_INDEX,),
+                )
+            )
+
+        if not sections:
+            sections = [
+                PdfSection(
+                    headers=schema.COST_BASIS_HEADERS,
+                    body=[],
+                    col_widths_mm=_COST_BASIS_COL_WIDTHS_MM,
+                    wrap_columns=(_COST_BASIS_SYMBOL_COL_INDEX,),
+                )
+            ]
+
+        return write_pdf(
+            self.pdf_dir / f"{base_filename}.pdf",
+            title=title,
+            sections=sections,
+            source_dates=_format_source_dates(source_dates),
+            notes=_COST_BASIS_PDF_NOTES,
+            footer_totals=family_footer,
+            footer_totals_title="Family Total",
         )
 
     # ------------------------------------------------------------------
