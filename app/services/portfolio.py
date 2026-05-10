@@ -20,15 +20,21 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from app.services.holdings import HoldingRow
 from app.utils.decimal_utils import ZERO, safe_divide
+from app.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 # Pre-built once so we never accidentally mix Decimal with float math
 # when scaling fractions into percentages.
 _HUNDRED: Decimal = Decimal("100")
+
+
+_CASH_ISIN = "CASH"
 
 
 @dataclass(frozen=True)
@@ -50,6 +56,9 @@ class CombinedHoldingRow:
     # by `build_combined_portfolio` once the family-wide total is known.
     # This is the family-level analogue of `HoldingRow.portfolio_percentage`.
     family_percentage: Decimal
+    # Synthetic family-level cash row: `shares_per_account` holds idle cash
+    # balances per account (operator-entered); see `merge_cash_into_combined`.
+    is_cash: bool = False
 
     @property
     def account_names(self) -> list[str]:
@@ -122,8 +131,83 @@ def build_combined_portfolio(
                 combined_average_price=avg_price,
                 total_invested=agg.total_invested,
                 family_percentage=family_pct,
+                is_cash=False,
             )
         )
 
     combined.sort(key=lambda r: (r.symbol.lower(), r.isin))
     return combined
+
+
+def merge_cash_into_combined(
+    combined_securities: list[CombinedHoldingRow],
+    cash_by_account: Mapping[str, Decimal],
+    account_names: list[str],
+) -> list[CombinedHoldingRow]:
+    """Recompute family % across securities plus idle cash; append one cash row.
+
+    `cash_by_account` entries default to zero for accounts not present.
+    When aggregate cash is exactly zero, returns `combined_securities`
+    unchanged. Negative aggregate cash is allowed when it nets against
+    securities for allocation math; if the family total would not be
+    positive, the cash row is skipped.
+    """
+
+    cash_total = sum(
+        (cash_by_account.get(name, ZERO) for name in account_names),
+        start=ZERO,
+    )
+    if cash_total == ZERO:
+        return combined_securities
+
+    securities = [
+        r for r in combined_securities if not r.is_cash
+    ]
+    securities_total = sum((r.total_invested for r in securities), start=ZERO)
+    grand_total = securities_total + cash_total
+    if grand_total <= ZERO:
+        logger.warning(
+            "Omitting cash row: family total (securities + cash) "
+            "is not positive (grand_total=%s).",
+            grand_total,
+        )
+        return combined_securities
+
+    rescored: list[CombinedHoldingRow] = []
+    for row in securities:
+        pct = safe_divide(row.total_invested * _HUNDRED, grand_total)
+        rescored.append(
+            CombinedHoldingRow(
+                isin=row.isin,
+                symbol=row.symbol,
+                shares_per_account=dict(row.shares_per_account),
+                combined_shares=row.combined_shares,
+                combined_average_price=row.combined_average_price,
+                total_invested=row.total_invested,
+                family_percentage=pct,
+                is_cash=False,
+            )
+        )
+
+    shares_cash = {name: cash_by_account.get(name, ZERO) for name in account_names}
+    cash_pct = safe_divide(cash_total * _HUNDRED, grand_total)
+    rescored.append(
+        CombinedHoldingRow(
+            isin=_CASH_ISIN,
+            symbol="Cash",
+            shares_per_account=shares_cash,
+            combined_shares=ZERO,
+            combined_average_price=ZERO,
+            total_invested=cash_total,
+            family_percentage=cash_pct,
+            is_cash=True,
+        )
+    )
+
+    rescored.sort(
+        key=lambda r: (
+            (1, "") if r.is_cash else (0, r.symbol.lower()),
+            r.isin,
+        )
+    )
+    return rescored

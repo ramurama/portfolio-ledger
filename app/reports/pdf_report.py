@@ -13,7 +13,8 @@ Every PDF includes:
     * A bold report title at the top of the first page.
     * A generated-at timestamp directly underneath the title.
     * The data table(s) with headers repeated on each new page.
-    * Optional totals strip beneath each section.
+    * Optional totals strip beneath each section, optional notes directly
+      after those totals (per section).
     * Page numbers in the footer of every page.
 
 We use ReportLab's `BaseDocTemplate` + `PageTemplate` so the page-number
@@ -228,6 +229,9 @@ class PdfSection:
     totals: dict[str, str] = field(default_factory=dict)
     col_widths_mm: Optional[list[float]] = None
     wrap_columns: tuple[int, ...] = ()
+    # Rendered in italic immediately after this section's totals strip
+    # (before any page break to the next section).
+    notes_after_totals: tuple[str, ...] = ()
 
 
 def write_pdf(
@@ -533,6 +537,11 @@ def _build_section_flowables(section: PdfSection) -> list:
         out.append(Spacer(1, 4 * mm))
         for label, value in section.totals.items():
             out.append(Paragraph(f"{label}: {value}", _TOTALS_STYLE))
+
+    if section.notes_after_totals:
+        out.append(Spacer(1, 3 * mm))
+        for line in section.notes_after_totals:
+            out.append(Paragraph(f"Note: {line}", _NOTE_STYLE))
 
     return out
 

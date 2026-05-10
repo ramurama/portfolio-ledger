@@ -9,6 +9,11 @@ Public API:
                            writes every requested file to disk.
 """
 
-from app.reports.report_manager import ReportFormat, ReportManager, ReportPayload
+from app.reports.report_manager import (
+    ReportFormat,
+    ReportKind,
+    ReportManager,
+    ReportPayload,
+)
 
-__all__ = ["ReportFormat", "ReportManager", "ReportPayload"]
+__all__ = ["ReportFormat", "ReportKind", "ReportManager", "ReportPayload"]

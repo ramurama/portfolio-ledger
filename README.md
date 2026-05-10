@@ -17,6 +17,10 @@ class registered in `app/parsers/registry.py`.
 - Tracks tax lots via FIFO matching (`collections.deque`) with full
   support for partial lot consumption.
 - Aggregates current holdings per account and across the family.
+- Optional **cash** line in the combined report from operator-entered
+  current idle cash per portfolio folder.
+- Combined PDF/Excel/CSV include an **annual summary** of pre-tax realized
+  gains by account, family totals, and approximate **Family CGT Paid** per year.
 - Renders 3 standard reports (Tax Lots realized gains, current
   holdings, combined family portfolio) in 3 output formats (CSV, Excel,
   PDF).
@@ -30,7 +34,8 @@ class registered in `app/parsers/registry.py`.
 - All money math uses `Decimal` - never `float`.
 - Output uses US decimal formatting (`.` decimal, `,` thousands).
 - Single-file Typer CLI with `process`, `generate-reports`, and
-  `generate-cost-basis` commands.
+  `generate-cost-basis` commands (reports can be chosen interactively or
+  via `--reports` / `--format`).
 
 ## Project layout
 
@@ -42,6 +47,7 @@ app/
   parsers/               Broker-specific CSV parsers (+ registry).
   services/              Pure business logic: ingestion, tax lots, holdings.
   reports/               CSV / Excel / PDF renderers + orchestrator.
+  cli/                   Interactive prompts for report selection.
   utils/                 Decimal / date / logging helpers.
 input/
   <person_name>/         Drop CSV exports here, one folder per account.
@@ -67,19 +73,41 @@ Drop your Scalable Capital CSV exports under `input/<account_name>/`
 # Smoke-test: parse + run tax-lot matching and print a summary
 python -m app.main process
 
-# Generate every report in every format
+# Generate reports (interactive: choose Tax Lots / Holdings / Combined
+# and CSV / Excel / PDF per report; optional idle-cash prompts for Combined)
 python -m app.main generate-reports
+
+# Non-interactive: pick logical reports and formats explicitly
+python -m app.main generate-reports \
+  --reports tax-lots --reports holdings --reports combined \
+  --format all
+
+# Combined report with current idle cash per folder (non-interactive)
+python -m app.main generate-reports --reports combined --format pdf \
+  --cash ramu:12000 --cash rakshana:8000
 
 # Filter to one account (folder name)
 python -m app.main process --account ramu
 python -m app.main generate-reports --account ramu
 
-# Choose specific output formats (repeatable)
-python -m app.main generate-reports -f csv -f pdf
+# Only --format set: CLI asks which reports to generate (yes/no each)
+python -m app.main generate-reports -f csv
+
+# Only --reports set: CLI asks which formats to use for those reports
+python -m app.main generate-reports --reports combined --reports tax-lots
 
 # Verbose / debug logging
 python -m app.main process --verbose
 ```
+
+For **Combined Family Portfolio**, you can include **current idle cash**
+as its own row (liquid balances not invested in securities). Interactive
+runs ask whether to include cash and prompt once per account folder under
+`input/`. Those amounts are used directly for the Cash row and family **%
+of portfolio** math (no tax or cost-basis adjustment applied here).
+
+With `--reports` and `--format`, pass repeatable `--cash folder:amount`
+for non-interactive runs (omit `--cash` for a securities-only combined view).
 
 Reports are written into `output/csv/`, `output/excel/`, `output/pdf/`
 with timestamps in the filename so historical runs do not overwrite
@@ -183,15 +211,14 @@ python -m pytest tests/ -q
 
 ## Environment overrides
 
-Three env vars let you point the tool at non-default directories or
-narrow the admitted broker transaction types - useful when running
-inside Docker:
+Environment variables let you point the tool at non-default directories
+and narrow transaction types — useful when running inside Docker:
 
-| Variable                              | Purpose                            |
-| ------------------------------------- | ---------------------------------- |
-| `PORTFOLIO_LEDGER_INPUT_DIR`          | Override the default `./input/`.   |
-| `PORTFOLIO_LEDGER_OUTPUT_DIR`         | Override the default `./output/`.  |
-| `PORTFOLIO_LEDGER_TRANSACTION_TYPES`  | Comma-separated list of raw broker `type` values to admit (default includes `Buy,Sell,Savings plan,Distribution,Taxes,Tax,Security transfer,Corporate action`). Anything not listed is dropped at parse time. |
+| Variable                                      | Purpose |
+| --------------------------------------------- | ------- |
+| `PORTFOLIO_LEDGER_INPUT_DIR`                  | Override the default `./input/`. |
+| `PORTFOLIO_LEDGER_OUTPUT_DIR`                 | Override the default `./output/`. |
+| `PORTFOLIO_LEDGER_TRANSACTION_TYPES`          | Comma-separated list of raw broker `type` values to admit (default includes `Buy,Sell,Savings plan,Distribution,Taxes,Tax,Security transfer,Corporate action`). Anything not listed is dropped at parse time. |
 
 A starter `.env.template` is committed at the repo root - copy it to
 `.env` and edit if you need to override the defaults.

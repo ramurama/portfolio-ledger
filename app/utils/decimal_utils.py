@@ -186,6 +186,37 @@ def format_money(
     return symbol + formatted
 
 
+def parse_money_input(raw: str) -> Decimal:
+    """Parse a CLI-entered money string into ``Decimal``.
+
+    Accepts plain US decimals (``1234.56``), German broker-style amounts
+    (``1.234,56``), or comma-as-decimal (``1234,56``). Raises
+    ``ValueError`` when the string is empty or not numeric.
+    """
+
+    cleaned = raw.strip().replace(" ", "")
+    if not cleaned:
+        raise ValueError("Cash amount cannot be empty")
+
+    # Both separators → German thousands + comma decimal.
+    if "," in cleaned and "." in cleaned:
+        parsed = parse_german_decimal(cleaned)
+        if parsed is None:
+            raise ValueError(f"Cannot parse amount: {raw!r}")
+        return parsed
+
+    if "," in cleaned and "." not in cleaned:
+        last_seg = cleaned.rsplit(",", maxsplit=1)[-1]
+        # Single comma with ≤2 fractional digits → decimal comma.
+        if len(last_seg) <= 2 and cleaned.count(",") == 1:
+            return Decimal(cleaned.replace(",", "."))
+
+        # Otherwise treat commas as thousands separators (US style).
+        return Decimal(cleaned.replace(",", ""))
+
+    return Decimal(cleaned)
+
+
 def safe_divide(numerator: Decimal, denominator: Decimal) -> Decimal:
     """Divide two Decimals, returning zero when the denominator is zero.
 

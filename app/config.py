@@ -15,6 +15,7 @@ from decimal import getcontext
 from pathlib import Path
 from typing import Final
 
+
 # ---------------------------------------------------------------------------
 # Project root resolution
 # ---------------------------------------------------------------------------

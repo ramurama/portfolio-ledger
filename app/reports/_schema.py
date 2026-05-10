@@ -185,6 +185,29 @@ def combined_rows(
     body: list[list[str]] = []
     for r in rows:
         record = [r.isin, r.symbol]
+        if r.is_cash:
+            for name in account_names:
+                amt = r.shares_per_account.get(name)
+                record.append(
+                    format_money(amt, currency)
+                    if amt is not None
+                    else ""
+                )
+            family_pct_display = (
+                format_us_decimal(r.family_percentage, "0.01", thousands=False)
+                + "%"
+            )
+            record.extend(
+                [
+                    "",
+                    "",
+                    format_money(r.total_invested, currency),
+                    family_pct_display,
+                ]
+            )
+            body.append(record)
+            continue
+
         for name in account_names:
             shares = r.shares_per_account.get(name)
             record.append(
