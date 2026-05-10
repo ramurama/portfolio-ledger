@@ -281,23 +281,34 @@ class TestTaxLotEngine:
         assert trade.realized_gain_loss == Decimal("150")
         assert result.open_lots == []
 
-    def test_corporate_action_outbound_is_ignored(self) -> None:
-        """A negative-quantity corporate action represents the broker
-        reducing a parent position when shares convert to a successor.
-        We deliberately ignore it - the parent's original lots stay
-        in the queue and any subsequent sell of the parent uses the
-        full original cost basis."""
+    def test_corporate_action_outbound_reduces_fifo_before_sell(self) -> None:
+        """Negative corporate action consumes oldest lots first (e.g. ISIN
+        exchange row on the old security)."""
         engine = TaxLotEngine()
         result = engine.process([
             _buy("ramu", "PARENT", "10", "-200", datetime(2024, 1, 1)),
             _corporate_action("ramu", "PARENT", "-3", datetime(2024, 6, 1)),
-            _sell("ramu", "PARENT", "10", "300", datetime(2024, 12, 1)),
+            _sell("ramu", "PARENT", "7", "210", datetime(2024, 12, 1)),
         ])
 
-        # All 10 shares still consumable from the original buy at $20.
         assert len(result.realized_trades) == 1
         trade = result.realized_trades[0]
-        assert trade.shares_sold == Decimal("10")
-        assert trade.acquisition_cost == Decimal("200")
-        assert trade.sale_proceeds == Decimal("300")
-        assert trade.realized_gain_loss == Decimal("100")
+        assert trade.shares_sold == Decimal("7")
+        assert trade.acquisition_cost == Decimal("140")
+        assert trade.sale_proceeds == Decimal("210")
+        assert trade.realized_gain_loss == Decimal("70")
+        assert result.open_lots == []
+
+    def test_corporate_action_isin_exchange_old_cleared_new_lot(self) -> None:
+        """Broker replaces ISIN: deduction on old, zero-cost acquisition on new."""
+        engine = TaxLotEngine()
+        result = engine.process([
+            _buy("ramu", "OLDISIN", "1", "-100", datetime(2024, 1, 1)),
+            _corporate_action("ramu", "OLDISIN", "-1", datetime(2024, 6, 1)),
+            _corporate_action("ramu", "NEWISIN", "1", datetime(2024, 6, 1)),
+        ])
+
+        assert result.realized_trades == []
+        assert [lot.isin for lot in result.open_lots] == ["NEWISIN"]
+        assert result.open_lots[0].remaining_shares == Decimal("1")
+        assert result.open_lots[0].cost_per_share == Decimal("0")

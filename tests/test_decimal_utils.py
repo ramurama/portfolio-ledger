@@ -138,3 +138,11 @@ class TestFormatMoney:
 
     def test_custom_quantize(self) -> None:
         assert format_money(Decimal("1.2345"), "EUR", "0.0001") == "\u20ac1.2345"
+
+    def test_format_money_without_symbol(self) -> None:
+        assert format_money(
+            Decimal("1234.56"), "EUR", include_currency_symbol=False,
+        ) == "1,234.56"
+        assert format_money(
+            Decimal("-99.9"), "USD", include_currency_symbol=False,
+        ) == "-99.90"

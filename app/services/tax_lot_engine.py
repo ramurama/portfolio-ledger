@@ -345,11 +345,16 @@ class TaxLotEngine:
               Scalable Capital export, which already drives
               :meth:`_handle_acquisition` to a per-share cost of zero -
               so we can simply route through that handler.
-            * ``-qty`` rows (the broker reducing a parent position when
-              shares are converted into a successor security) are
-              ignored. The original parent lots stay in the queue;
-              accuracy is traded for full automation.
+            * ``-qty`` rows reduce open lots **FIFO** without emitting
+              ``RealizedTrade`` rows (no cash changes hands — this is not
+              a taxable sale in the export). Matches broker behaviour
+              when an ISIN is replaced: old ISIN goes negative, new ISIN
+              often appears as a separate ``+qty`` corporate action.
             * ``qty=0`` / ``qty is None`` rows are ignored defensively.
+
+        Spin-offs that require proportional cost-basis allocation across
+        parent and spin-off are still approximate when the broker only
+        publishes fractional ratios via ``-qty`` / ``+qty`` pairs.
         """
 
         if tx.quantity is None or tx.quantity == ZERO:
@@ -364,14 +369,42 @@ class TaxLotEngine:
             self._handle_acquisition(tx)
             return
 
-        # Negative quantity - intentionally a no-op. Logged at info so
-        # the operator can correlate ignored deductions with surviving
-        # parent lots when auditing.
+        if tx.isin is None:
+            logger.warning(
+                "Skipping corporate action deduction with missing ISIN at %s: %s",
+                tx.date, tx,
+            )
+            return
+
+        shares_to_remove = abs(tx.quantity)
         logger.info(
-            "Ignoring corporate action deduction: account=%s isin=%s qty=%s "
-            "(parent cost basis preserved)",
-            tx.account_name, tx.isin, tx.quantity,
+            "Corporate action FIFO reduction: account=%s isin=%s shares=%s",
+            tx.account_name, tx.isin, shares_to_remove,
         )
+        self._consume_fifo_without_realized_trade(tx, shares_to_remove)
+
+    def _consume_fifo_without_realized_trade(
+        self,
+        tx: Transaction,
+        shares_to_remove: Decimal,
+    ) -> None:
+        """Drop ``shares_to_remove`` from the front of the queue (FIFO).
+
+        Used for negative corporate actions. Does not append to
+        ``self._realized`` — there are no cash proceeds in the CSV row.
+        """
+
+        queue = self._queue_for(tx)
+        remaining = shares_to_remove
+        while remaining > ZERO:
+            lot = self._peek_or_log_short_sale(queue, tx, remaining)
+            if lot is None:
+                return
+            consumed = min(lot.remaining_shares, remaining)
+            lot.remaining_shares -= consumed
+            remaining -= consumed
+            if lot.remaining_shares == ZERO:
+                queue.popleft()
 
     # ------------------------------------------------------------------
     # Internal helpers

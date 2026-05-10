@@ -210,10 +210,12 @@ export, so the engine uses a deliberately simple rule:
   later sell of those shares therefore books the full proceeds as
   realized gain. This is conservative for tax purposes (it
   over-states gain), but fully automatic.
-- `-qty` rows (the broker reducing a parent position when shares are
-  converted into a successor security) are **ignored**. The original
-  parent lots stay in the queue, so a later sell of the parent uses
-  its full original cost basis.
+- `-qty` rows **reduce open lots FIFO** (no cash, so no row in the Tax
+  Lots realized-gains report). This matches broker behaviour when an
+  old ISIN is replaced: you typically see a deduction on the retired ISIN
+  and a separate `+qty` corporate action on the new ISIN. The replacement
+  row still loads at **zero** cost basis here unless you adjust manually
+  for strict tax figures.
 
 If you need the exact German proportional split for a particular
 spin-off, override the realized-gain row in the destination broker's
