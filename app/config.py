@@ -13,7 +13,8 @@ from __future__ import annotations
 import os
 from decimal import getcontext
 from pathlib import Path
-from typing import Final
+from typing import Final, Optional
+
 
 # ---------------------------------------------------------------------------
 # Project root resolution
@@ -65,6 +66,36 @@ def _resolve_csv_list(env_var: str, default: tuple[str, ...]) -> tuple[str, ...]
 
     values = tuple(item.strip() for item in raw.split(",") if item.strip())
     return values or default
+
+
+def parse_portfolio_isin_ignore_rules(raw: Optional[str]) -> dict[str, frozenset[str]]:
+    """Parse ``PORTFOLIO_LEDGER_IGNORE_ISINS``-style text into a lookup map.
+
+    Each comma-separated entry must be ``<account_folder>:<ISIN>`` where
+    ``account_folder`` matches an ``input/<name>/`` directory (compared
+    case-insensitively). ISINs are normalised to upper case.
+
+    Example::
+
+        rakshana:DE000EWG2LD7,ramu:US5949181045
+    """
+
+    if not raw:
+        return {}
+
+    by_account_lower: dict[str, set[str]] = {}
+    for piece in raw.split(","):
+        entry = piece.strip()
+        if not entry or ":" not in entry:
+            continue
+        account_part, isin_part = entry.split(":", 1)
+        account_key = account_part.strip().lower()
+        isin_norm = isin_part.strip().upper()
+        if not account_key or not isin_norm:
+            continue
+        by_account_lower.setdefault(account_key, set()).add(isin_norm)
+
+    return {k: frozenset(v) for k, v in by_account_lower.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -127,4 +158,13 @@ SUPPORTED_TRANSACTION_TYPES: Final[tuple[str, ...]] = _resolve_csv_list(
         "Security transfer",
         "Corporate action",
     ),
+)
+
+# Per-account ISINs to omit from current-holdings and combined-family reports
+# when the CLI enables exclusions (see ``--apply-isin-ignore``). Parsed at
+# import time from the environment; an empty / unset variable means no rules.
+PORTFOLIO_LEDGER_ISIN_IGNORE_RULES: Final[dict[str, frozenset[str]]] = (
+    parse_portfolio_isin_ignore_rules(
+        os.environ.get("PORTFOLIO_LEDGER_IGNORE_ISINS"),
+    )
 )

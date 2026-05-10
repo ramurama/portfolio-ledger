@@ -161,13 +161,15 @@ def format_money(
     value: Optional[Decimal],
     currency: Optional[str],
     quantize: Optional[str] = "0.01",
+    *,
+    include_currency_symbol: bool = True,
 ) -> str:
-    """Format `value` with the appropriate currency symbol prepended.
+    """Format `value` as US-locale money, optionally with a currency symbol.
 
-    The symbol always sits between the optional minus sign and the
-    digits, i.e. ``-€1,234.56`` rather than ``€-1,234.56`` - that
-    matches how German / European bank statements typeset negatives
-    and reads naturally for both gains and losses.
+    When ``include_currency_symbol`` is True (default), the symbol sits
+    between the optional minus sign and the digits, i.e. ``-€1,234.56``
+    rather than ``€-1,234.56``. CSV and Excel exports pass False so cells
+    stay numeric strings without ``€`` / ``$`` glyphs.
 
     `None` is returned as an empty string so reports can distinguish
     "missing" from "zero".
@@ -177,6 +179,9 @@ def format_money(
         return ""
 
     formatted = format_us_decimal(value, quantize, thousands=True)
+    if not include_currency_symbol:
+        return formatted
+
     symbol = currency_symbol(currency)
 
     if not symbol:
@@ -184,6 +189,37 @@ def format_money(
     if formatted.startswith("-"):
         return "-" + symbol + formatted[1:]
     return symbol + formatted
+
+
+def parse_money_input(raw: str) -> Decimal:
+    """Parse a CLI-entered money string into ``Decimal``.
+
+    Accepts plain US decimals (``1234.56``), German broker-style amounts
+    (``1.234,56``), or comma-as-decimal (``1234,56``). Raises
+    ``ValueError`` when the string is empty or not numeric.
+    """
+
+    cleaned = raw.strip().replace(" ", "")
+    if not cleaned:
+        raise ValueError("Cash amount cannot be empty")
+
+    # Both separators → German thousands + comma decimal.
+    if "," in cleaned and "." in cleaned:
+        parsed = parse_german_decimal(cleaned)
+        if parsed is None:
+            raise ValueError(f"Cannot parse amount: {raw!r}")
+        return parsed
+
+    if "," in cleaned and "." not in cleaned:
+        last_seg = cleaned.rsplit(",", maxsplit=1)[-1]
+        # Single comma with ≤2 fractional digits → decimal comma.
+        if len(last_seg) <= 2 and cleaned.count(",") == 1:
+            return Decimal(cleaned.replace(",", "."))
+
+        # Otherwise treat commas as thousands separators (US style).
+        return Decimal(cleaned.replace(",", ""))
+
+    return Decimal(cleaned)
 
 
 def safe_divide(numerator: Decimal, denominator: Decimal) -> Decimal:

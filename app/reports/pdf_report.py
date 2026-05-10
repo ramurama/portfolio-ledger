@@ -13,7 +13,8 @@ Every PDF includes:
     * A bold report title at the top of the first page.
     * A generated-at timestamp directly underneath the title.
     * The data table(s) with headers repeated on each new page.
-    * Optional totals strip beneath each section.
+    * Optional totals strip beneath each section, optional notes directly
+      after those totals (per section).
     * Page numbers in the footer of every page.
 
 We use ReportLab's `BaseDocTemplate` + `PageTemplate` so the page-number
@@ -24,6 +25,7 @@ the header row on each new page.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -51,6 +53,42 @@ logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Typography — PDF standard fonts (no TTF bundle required)
+# ---------------------------------------------------------------------------
+# Helvetica (sans-serif) reads digits and currency clearly in dense tables.
+# It is one of the 14 core PDF fonts; ReportLab embeds it without font files.
+_BODY_FONT = "Helvetica"
+_BODY_FONT_BOLD = "Helvetica-Bold"
+_BODY_FONT_ITALIC = "Helvetica-Oblique"
+
+# Ordinary ASCII space between symbol and amount. Do **not** use U+2009 thin
+# space here: the standard Type1 fonts only ship a limited glyph set, and
+# thin space often renders as a black “tofu” box in PDF viewers.
+_MONEY_SPACE = " "
+_CURRENCY_SYMBOL_BEFORE_DIGIT = re.compile(
+    r"(?P<prefix>-?)(?P<sym>\u20ac|\$|\u00a3|\u00a5)(?P<digit>\d)"
+)
+
+
+def apply_pdf_money_spacing(text: str) -> str:
+    """Insert a normal space after € $ £ ¥ when glued to a digit.
+
+    Used only for PDF rendering so CSV/Excel strings stay unchanged.
+    Safe to call repeatedly (already-spaced output does not match again).
+    """
+
+    if not text:
+        return text
+    return _CURRENCY_SYMBOL_BEFORE_DIGIT.sub(
+        lambda m: (
+            f"{m.group('prefix')}{m.group('sym')}"
+            f"{_MONEY_SPACE}{m.group('digit')}"
+        ),
+        text,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Styles
 # ---------------------------------------------------------------------------
 _BASE_STYLES = getSampleStyleSheet()
@@ -58,7 +96,7 @@ _BASE_STYLES = getSampleStyleSheet()
 _TITLE_STYLE = ParagraphStyle(
     name="ReportTitle",
     parent=_BASE_STYLES["Title"],
-    fontName="Helvetica-Bold",
+    fontName=_BODY_FONT_BOLD,
     fontSize=18,
     leading=22,
     spaceAfter=4,
@@ -68,7 +106,7 @@ _TITLE_STYLE = ParagraphStyle(
 _SUBTITLE_STYLE = ParagraphStyle(
     name="ReportSubtitle",
     parent=_BASE_STYLES["Heading2"],
-    fontName="Helvetica-Bold",
+    fontName=_BODY_FONT_BOLD,
     fontSize=13,
     leading=16,
     spaceBefore=2,
@@ -79,7 +117,7 @@ _SUBTITLE_STYLE = ParagraphStyle(
 _TIMESTAMP_STYLE = ParagraphStyle(
     name="ReportTimestamp",
     parent=_BASE_STYLES["Normal"],
-    fontName="Helvetica-Oblique",
+    fontName=_BODY_FONT_ITALIC,
     fontSize=9,
     textColor=colors.grey,
     spaceAfter=4,
@@ -88,7 +126,7 @@ _TIMESTAMP_STYLE = ParagraphStyle(
 _SOURCE_HEADER_STYLE = ParagraphStyle(
     name="ReportSourceHeader",
     parent=_BASE_STYLES["Normal"],
-    fontName="Helvetica-Bold",
+    fontName=_BODY_FONT_BOLD,
     fontSize=9,
     textColor=colors.HexColor("#1F4E78"),
     spaceBefore=2,
@@ -98,7 +136,7 @@ _SOURCE_HEADER_STYLE = ParagraphStyle(
 _SOURCE_LINE_STYLE = ParagraphStyle(
     name="ReportSourceLine",
     parent=_BASE_STYLES["Normal"],
-    fontName="Helvetica",
+    fontName=_BODY_FONT,
     fontSize=9,
     textColor=colors.HexColor("#333333"),
     leftIndent=10,
@@ -108,7 +146,7 @@ _SOURCE_LINE_STYLE = ParagraphStyle(
 _SOURCE_TRAILER_STYLE = ParagraphStyle(
     name="ReportSourceTrailer",
     parent=_BASE_STYLES["Normal"],
-    fontName="Helvetica",
+    fontName=_BODY_FONT,
     fontSize=9,
     textColor=colors.HexColor("#333333"),
     spaceAfter=10,
@@ -117,9 +155,11 @@ _SOURCE_TRAILER_STYLE = ParagraphStyle(
 _TOTALS_STYLE = ParagraphStyle(
     name="ReportTotals",
     parent=_BASE_STYLES["Normal"],
-    fontName="Helvetica-Bold",
+    fontName=_BODY_FONT_BOLD,
     fontSize=10,
-    spaceBefore=10,
+    leading=11,
+    spaceBefore=0,
+    spaceAfter=1,
 )
 
 # Footer totals (e.g. family-wide grand total) sit a step above the
@@ -129,28 +169,39 @@ _TOTALS_STYLE = ParagraphStyle(
 _FOOTER_TOTALS_HEADER_STYLE = ParagraphStyle(
     name="ReportFooterTotalsHeader",
     parent=_BASE_STYLES["Normal"],
-    fontName="Helvetica-Bold",
+    fontName=_BODY_FONT_BOLD,
     fontSize=11,
-    leading=14,
+    leading=12,
     textColor=colors.HexColor("#1F4E78"),
-    spaceBefore=14,
-    spaceAfter=2,
+    spaceBefore=10,
+    spaceAfter=1,
 )
 
 _FOOTER_TOTALS_LINE_STYLE = ParagraphStyle(
     name="ReportFooterTotalsLine",
     parent=_BASE_STYLES["Normal"],
-    fontName="Helvetica-Bold",
+    fontName=_BODY_FONT_BOLD,
     fontSize=10,
-    leading=12,
-    spaceAfter=2,
+    leading=11,
+    spaceBefore=0,
+    spaceAfter=1,
 )
 
 _NOTE_STYLE = ParagraphStyle(
     name="ReportNote",
     parent=_BASE_STYLES["Normal"],
-    fontName="Helvetica-Oblique",
+    fontName=_BODY_FONT_ITALIC,
     fontSize=9,
+    textColor=colors.HexColor("#555555"),
+    spaceBefore=2,
+    spaceAfter=2,
+)
+
+_EMPTY_SECTION_STYLE = ParagraphStyle(
+    name="ReportEmptySection",
+    parent=_BASE_STYLES["Normal"],
+    fontName=_BODY_FONT_ITALIC,
+    fontSize=10,
     textColor=colors.HexColor("#555555"),
     spaceBefore=2,
     spaceAfter=2,
@@ -163,7 +214,7 @@ _NOTE_STYLE = ParagraphStyle(
 _CELL_PARAGRAPH_STYLE = ParagraphStyle(
     name="ReportCell",
     parent=_BASE_STYLES["Normal"],
-    fontName="Helvetica",
+    fontName=_BODY_FONT,
     fontSize=8,
     leading=10,
     spaceBefore=0,
@@ -180,7 +231,7 @@ _CELL_PARAGRAPH_STYLE = ParagraphStyle(
 _HEADER_PARAGRAPH_STYLE = ParagraphStyle(
     name="ReportHeader",
     parent=_BASE_STYLES["Normal"],
-    fontName="Helvetica-Bold",
+    fontName=_BODY_FONT_BOLD,
     fontSize=9,
     leading=11,
     textColor=colors.white,
@@ -192,7 +243,8 @@ _HEADER_PARAGRAPH_STYLE = ParagraphStyle(
 _TABLE_STYLE = TableStyle([
     ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1F4E78")),
     ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+    ("FONTNAME", (0, 0), (-1, 0), _BODY_FONT_BOLD),
+    ("FONTNAME", (0, 1), (-1, -1), _BODY_FONT),
     ("FONTSIZE", (0, 0), (-1, 0), 9),
     ("FONTSIZE", (0, 1), (-1, -1), 8),
     ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
@@ -228,6 +280,9 @@ class PdfSection:
     totals: dict[str, str] = field(default_factory=dict)
     col_widths_mm: Optional[list[float]] = None
     wrap_columns: tuple[int, ...] = ()
+    # Rendered in italic immediately after this section's totals strip
+    # (before any page break to the next section).
+    notes_after_totals: tuple[str, ...] = ()
 
 
 def write_pdf(
@@ -410,7 +465,10 @@ def _build_footer_totals(
         )
     for label, value in footer_totals.items():
         flows.append(
-            Paragraph(f"{label}: {value}", _FOOTER_TOTALS_LINE_STYLE)
+            Paragraph(
+                f"{label}: {apply_pdf_money_spacing(value)}",
+                _FOOTER_TOTALS_LINE_STYLE,
+            )
         )
     return flows
 
@@ -508,9 +566,13 @@ def _build_section_flowables(section: PdfSection) -> list:
         # (e.g. "Average Purchase Price", "% of Family Portfolio")
         # fold onto a second line instead of bleeding into the next
         # column - regardless of how the operator chose `col_widths_mm`.
+        body_spaced = [
+            [apply_pdf_money_spacing(cell) for cell in row]
+            for row in section.body
+        ]
         wrapped_headers = _wrap_headers(section.headers)
         body_with_wrapping = _apply_cell_wrapping(
-            section.body, section.wrap_columns,
+            body_spaced, section.wrap_columns,
         )
         table_data = [wrapped_headers] + body_with_wrapping
         col_widths = (
@@ -526,13 +588,23 @@ def _build_section_flowables(section: PdfSection) -> list:
         # reader explicitly that there was nothing to render.
         out.append(Paragraph(
             "<i>No data available for this section.</i>",
-            _BASE_STYLES["Normal"],
+            _EMPTY_SECTION_STYLE,
         ))
 
     if section.totals:
-        out.append(Spacer(1, 4 * mm))
+        out.append(Spacer(1, 2.5 * mm))
         for label, value in section.totals.items():
-            out.append(Paragraph(f"{label}: {value}", _TOTALS_STYLE))
+            out.append(
+                Paragraph(
+                    f"{label}: {apply_pdf_money_spacing(value)}",
+                    _TOTALS_STYLE,
+                )
+            )
+
+    if section.notes_after_totals:
+        out.append(Spacer(1, 3 * mm))
+        for line in section.notes_after_totals:
+            out.append(Paragraph(f"Note: {line}", _NOTE_STYLE))
 
     return out
 
@@ -585,7 +657,7 @@ def _draw_page_number(canvas, doc) -> None:
     """Footer callback: render `Page X` centred at the bottom."""
 
     canvas.saveState()
-    canvas.setFont("Helvetica", 8)
+    canvas.setFont(_BODY_FONT, 8)
     canvas.setFillColor(colors.grey)
     page_text = f"Page {doc.page}"
     canvas.drawCentredString(

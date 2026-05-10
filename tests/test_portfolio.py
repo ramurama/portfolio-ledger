@@ -16,7 +16,10 @@ from __future__ import annotations
 from decimal import Decimal
 
 from app.services.holdings import HoldingRow
-from app.services.portfolio import build_combined_portfolio
+from app.services.portfolio import (
+    build_combined_portfolio,
+    merge_cash_into_combined,
+)
 
 
 def _holding(
@@ -121,3 +124,58 @@ class TestBuildCombinedPortfolio:
 
     def test_empty_input_yields_empty_output(self) -> None:
         assert build_combined_portfolio([]) == []
+
+
+class TestMergeCashIntoCombined:
+    def test_percentages_sum_to_100_with_cash(self) -> None:
+        base = build_combined_portfolio([
+            _holding("ramu", "ISIN_A", "Alpha", "1", "100", "400"),
+            _holding("rakshana", "ISIN_B", "Bravo", "1", "100", "600"),
+        ])
+        cash_by_account = {"ramu": Decimal("100"), "rakshana": Decimal("400")}
+        merged = merge_cash_into_combined(
+            base,
+            cash_by_account,
+            ["ramu", "rakshana"],
+        )
+        # Securities 1000 + cash 500 => grand total 1500.
+        by_isin = {r.isin: r for r in merged}
+        assert by_isin["ISIN_A"].family_percentage == (
+            Decimal("400") * Decimal("100") / Decimal("1500")
+        )
+        assert by_isin["ISIN_B"].family_percentage == (
+            Decimal("600") * Decimal("100") / Decimal("1500")
+        )
+        cash_row = by_isin["CASH"]
+        assert cash_row.is_cash
+        assert cash_row.family_percentage == (
+            Decimal("500") * Decimal("100") / Decimal("1500")
+        )
+        assert sum(r.family_percentage for r in merged) == Decimal("100")
+
+    def test_zero_total_cash_returns_input(self) -> None:
+        base = build_combined_portfolio([
+            _holding("ramu", "ISIN_A", "Alpha", "1", "100", "100"),
+        ])
+        assert merge_cash_into_combined(base, {}, ["ramu"]) == base
+
+    def test_cash_only_portfolio(self) -> None:
+        merged = merge_cash_into_combined(
+            [],
+            {"ramu": Decimal("1000")},
+            ["ramu"],
+        )
+        assert len(merged) == 1
+        assert merged[0].is_cash
+        assert merged[0].family_percentage == Decimal("100")
+
+    def test_skips_cash_when_family_total_not_positive(self) -> None:
+        base = build_combined_portfolio([
+            _holding("ramu", "ISIN_A", "Alpha", "1", "100", "100"),
+        ])
+        merged = merge_cash_into_combined(
+            base,
+            {"ramu": Decimal("-500")},
+            ["ramu"],
+        )
+        assert merged == base

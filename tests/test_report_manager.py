@@ -14,7 +14,12 @@ from pathlib import Path
 import pytest
 
 from app.models import RealizedTrade
-from app.reports.report_manager import ReportManager
+from app.reports.report_manager import (
+    ReportFormat,
+    ReportKind,
+    ReportManager,
+    ReportPayload,
+)
 from app.services.cost_basis import CostBasisRow
 from app.services.holdings import HoldingRow
 
@@ -231,3 +236,24 @@ class TestTaxLotsPdfTotals:
             "Total Realized Gain/Loss": "€12.50",
         }
         assert kwargs["footer_totals_title"] == "Tax Lots Total"
+
+
+class TestReportManagerWriteSelection:
+    def test_write_emits_only_requested_reports(
+        self, tmp_path: Path,
+    ) -> None:
+        stamp = "1999-01-01_00-00-00"
+        manager = ReportManager(
+            csv_dir=tmp_path,
+            excel_dir=tmp_path,
+            pdf_dir=tmp_path,
+        )
+        paths = manager.write(
+            ReportPayload(account_names=["ramu"]),
+            report_formats={
+                ReportKind.HOLDINGS: [ReportFormat.CSV],
+            },
+            generated_at=datetime(1999, 1, 1, 0, 0, 0),
+        )
+        assert len(paths) == 1
+        assert paths[0].name == f"current_holdings_{stamp}.csv"

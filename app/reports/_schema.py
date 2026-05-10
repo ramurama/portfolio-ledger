@@ -13,8 +13,10 @@ Each `*_rows` function returns:
 
 Currency formatting also lives at this layer: the renderer never has
 to know which columns hold money - it just hands the strings through.
-Keeping the formatting at this layer (rather than inside each renderer)
-guarantees identical numbers across all three output files.
+
+Money columns use ``format_money`` with symbols for PDF-style rows and
+without symbols for CSV/Excel (``money_symbols=False``), so tabular
+exports stay plain numeric text while PDFs keep human-readable ``€``.
 """
 
 from __future__ import annotations
@@ -85,9 +87,12 @@ def sort_tax_lots_trades(trades: Iterable[RealizedTrade]) -> list[RealizedTrade]
 def tax_lots_rows(
     trades: Iterable[RealizedTrade],
     currency: str,
+    *,
+    money_symbols: bool = True,
 ) -> list[list[str]]:
     """Render the Tax Lots realized-trades table body in `currency`."""
 
+    sym = money_symbols
     body: list[list[str]] = []
     for tr in trades:
         body.append(
@@ -98,9 +103,18 @@ def tax_lots_rows(
                 tr.buy_date.strftime("%Y-%m-%d"),
                 tr.sell_date.strftime("%Y-%m-%d"),
                 format_us_decimal(tr.shares_sold, SHARE_QUANTIZE, thousands=True),
-                format_money(tr.acquisition_cost, currency),
-                format_money(tr.sale_proceeds, currency),
-                format_money(tr.realized_gain_loss, currency),
+                format_money(
+                    tr.acquisition_cost, currency,
+                    include_currency_symbol=sym,
+                ),
+                format_money(
+                    tr.sale_proceeds, currency,
+                    include_currency_symbol=sym,
+                ),
+                format_money(
+                    tr.realized_gain_loss, currency,
+                    include_currency_symbol=sym,
+                ),
             ]
         )
     return body
@@ -123,9 +137,12 @@ HOLDINGS_HEADERS: list[str] = [
 def holdings_rows(
     holdings: Iterable[HoldingRow],
     currency: str,
+    *,
+    money_symbols: bool = True,
 ) -> list[list[str]]:
     """Render the current-holdings table body in `currency`."""
 
+    sym = money_symbols
     body: list[list[str]] = []
     for h in holdings:
         # Percentages typically read better with a trailing "%" symbol
@@ -140,8 +157,14 @@ def holdings_rows(
                 h.isin,
                 h.symbol,
                 format_us_decimal(h.total_shares, SHARE_QUANTIZE, thousands=True),
-                format_money(h.average_purchase_price, currency, PRICE_QUANTIZE),
-                format_money(h.invested_amount, currency),
+                format_money(
+                    h.average_purchase_price, currency, PRICE_QUANTIZE,
+                    include_currency_symbol=sym,
+                ),
+                format_money(
+                    h.invested_amount, currency,
+                    include_currency_symbol=sym,
+                ),
                 pct_display,
             ]
         )
@@ -174,6 +197,8 @@ def combined_rows(
     rows: Iterable[CombinedHoldingRow],
     account_names: list[str],
     currency: str,
+    *,
+    money_symbols: bool = True,
 ) -> list[list[str]]:
     """Render the combined-portfolio table body in `currency`.
 
@@ -182,9 +207,39 @@ def combined_rows(
     stays rectangular (empty cells render as ``""``).
     """
 
+    sym = money_symbols
     body: list[list[str]] = []
     for r in rows:
         record = [r.isin, r.symbol]
+        if r.is_cash:
+            for name in account_names:
+                amt = r.shares_per_account.get(name)
+                record.append(
+                    format_money(
+                        amt, currency,
+                        include_currency_symbol=sym,
+                    )
+                    if amt is not None
+                    else ""
+                )
+            family_pct_display = (
+                format_us_decimal(r.family_percentage, "0.01", thousands=False)
+                + "%"
+            )
+            record.extend(
+                [
+                    "",
+                    "",
+                    format_money(
+                        r.total_invested, currency,
+                        include_currency_symbol=sym,
+                    ),
+                    family_pct_display,
+                ]
+            )
+            body.append(record)
+            continue
+
         for name in account_names:
             shares = r.shares_per_account.get(name)
             record.append(
@@ -201,8 +256,14 @@ def combined_rows(
         record.extend(
             [
                 format_us_decimal(r.combined_shares, SHARE_QUANTIZE, thousands=True),
-                format_money(r.combined_average_price, currency, PRICE_QUANTIZE),
-                format_money(r.total_invested, currency),
+                format_money(
+                    r.combined_average_price, currency, PRICE_QUANTIZE,
+                    include_currency_symbol=sym,
+                ),
+                format_money(
+                    r.total_invested, currency,
+                    include_currency_symbol=sym,
+                ),
                 family_pct_display,
             ]
         )
@@ -229,6 +290,8 @@ COST_BASIS_HEADERS: list[str] = [
 def cost_basis_rows(
     rows: Iterable[CostBasisRow],
     currency: str,
+    *,
+    money_symbols: bool = True,
 ) -> list[list[str]]:
     """Render the cost-basis table body in `currency`.
 
@@ -239,6 +302,7 @@ def cost_basis_rows(
     multiplication without losing significant figures.
     """
 
+    sym = money_symbols
     body: list[list[str]] = []
     for r in rows:
         body.append(
@@ -248,8 +312,14 @@ def cost_basis_rows(
                 r.symbol,
                 r.acquisition_date.strftime("%Y-%m-%d"),
                 format_us_decimal(r.quantity, SHARE_QUANTIZE, thousands=True),
-                format_money(r.cost_per_share, currency, PRICE_QUANTIZE),
-                format_money(r.cost_basis, currency),
+                format_money(
+                    r.cost_per_share, currency, PRICE_QUANTIZE,
+                    include_currency_symbol=sym,
+                ),
+                format_money(
+                    r.cost_basis, currency,
+                    include_currency_symbol=sym,
+                ),
             ]
         )
     return body

@@ -16,6 +16,7 @@ from app.utils.decimal_utils import (
     format_us_decimal,
     parse_german_decimal,
     parse_german_decimal_or_zero,
+    parse_money_input,
     safe_divide,
 )
 
@@ -72,6 +73,21 @@ class TestFormatUsDecimal:
         assert format_us_decimal(Decimal("1.234"), "0.01") == "1.23"
 
 
+class TestParseMoneyInput:
+    def test_us_decimal(self) -> None:
+        assert parse_money_input("1234.56") == Decimal("1234.56")
+
+    def test_german_style(self) -> None:
+        assert parse_money_input("1.234,56") == Decimal("1234.56")
+
+    def test_comma_decimal_only(self) -> None:
+        assert parse_money_input("50,25") == Decimal("50.25")
+
+    def test_empty_raises(self) -> None:
+        with pytest.raises(ValueError):
+            parse_money_input("   ")
+
+
 class TestSafeDivide:
     def test_normal_division(self) -> None:
         assert safe_divide(Decimal("10"), Decimal("4")) == Decimal("2.5")
@@ -122,3 +138,11 @@ class TestFormatMoney:
 
     def test_custom_quantize(self) -> None:
         assert format_money(Decimal("1.2345"), "EUR", "0.0001") == "\u20ac1.2345"
+
+    def test_format_money_without_symbol(self) -> None:
+        assert format_money(
+            Decimal("1234.56"), "EUR", include_currency_symbol=False,
+        ) == "1,234.56"
+        assert format_money(
+            Decimal("-99.9"), "USD", include_currency_symbol=False,
+        ) == "-99.90"

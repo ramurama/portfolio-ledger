@@ -178,11 +178,22 @@ class ReportFormat(str, Enum):
     CSV = "csv"
     EXCEL = "excel"
     PDF = "pdf"
+    # CLI sentinel expanded to CSV + Excel + PDF before writing files.
+    ALL = "all"
 
     @classmethod
     def all(cls) -> list["ReportFormat"]:
-        """Convenience helper used by the `--format all` CLI option."""
-        return list(cls)
+        """Every concrete file format (excludes the ``all`` sentinel)."""
+
+        return [cls.CSV, cls.EXCEL, cls.PDF]
+
+
+class ReportKind(str, Enum):
+    """Logical reports emitted by :meth:`ReportManager.write`."""
+
+    TAX_LOTS = "tax-lots"
+    HOLDINGS = "holdings"
+    COMBINED = "combined"
 
 
 @dataclass
@@ -190,7 +201,8 @@ class ReportPayload:
     """The full set of data the manager renders into reports.
 
     Not every command populates every field: `generate-reports` fills
-    `realized_trades`, `holdings`, `combined_portfolio`, while
+    `realized_trades`, `holdings`, `combined_portfolio`,
+    while
     `generate-cost-basis` only fills `cost_basis`. Each `_write_*`
     helper consumes only the field(s) it needs, so unused fields
     simply default to empty.
@@ -233,18 +245,47 @@ class ReportManager:
     def write(
         self,
         payload: ReportPayload,
-        formats: Iterable[ReportFormat],
+        formats: Iterable[ReportFormat] | None = None,
+        *,
+        report_formats: dict[ReportKind, list[ReportFormat]] | None = None,
         generated_at: datetime | None = None,
     ) -> list[Path]:
-        """Generate every report in every requested format.
+        """Generate reports in the requested format(s).
+
+        Callers supply either the legacy ``formats`` iterable (same formats
+        for every logical report) or ``report_formats`` mapping each
+        :class:`ReportKind` to its own format list.
 
         `generated_at` is injectable so tests can produce deterministic
         filenames; production callers omit it and we use "now".
         """
 
-        formats = list(formats)
-        if not formats:
-            logger.warning("ReportManager.write called with no formats")
+        plan: dict[ReportKind, list[ReportFormat]]
+        if report_formats is not None:
+            plan = {
+                k: list(v)
+                for k, v in report_formats.items()
+                if v
+            }
+        else:
+            if formats is None:
+                logger.warning(
+                    "ReportManager.write called with no formats and no "
+                    "report_formats"
+                )
+                return []
+            fmt_list = list(formats)
+            if not fmt_list:
+                logger.warning("ReportManager.write called with no formats")
+                return []
+            plan = {
+                ReportKind.TAX_LOTS: fmt_list,
+                ReportKind.HOLDINGS: fmt_list,
+                ReportKind.COMBINED: fmt_list,
+            }
+
+        if not plan:
+            logger.warning("ReportManager.write called with empty report plan")
             return []
 
         stamp = (generated_at or datetime.now()).strftime(
@@ -252,9 +293,18 @@ class ReportManager:
         )
 
         written: list[Path] = []
-        written.extend(self._write_tax_lots(payload, formats, stamp))
-        written.extend(self._write_holdings(payload, formats, stamp))
-        written.extend(self._write_combined(payload, formats, stamp))
+        if ReportKind.TAX_LOTS in plan:
+            written.extend(
+                self._write_tax_lots(payload, plan[ReportKind.TAX_LOTS], stamp)
+            )
+        if ReportKind.HOLDINGS in plan:
+            written.extend(
+                self._write_holdings(payload, plan[ReportKind.HOLDINGS], stamp)
+            )
+        if ReportKind.COMBINED in plan:
+            written.extend(
+                self._write_combined(payload, plan[ReportKind.COMBINED], stamp)
+            )
 
         logger.info("Generated %d report file(s).", len(written))
         return written
@@ -383,7 +433,9 @@ class ReportManager:
 
         body: list[list[str]] = []
         for _account, trades in per_account:
-            body.extend(schema.tax_lots_rows(trades, currency))
+            body.extend(
+                schema.tax_lots_rows(trades, currency, money_symbols=False),
+            )
 
         return write_csv(
             self.csv_dir / f"{base_filename}.csv",
@@ -403,7 +455,7 @@ class ReportManager:
             ExcelSection(
                 sheet_name=display_account_name(account) or "Unknown",
                 headers=schema.TAX_LOTS_HEADERS,
-                body=schema.tax_lots_rows(trades, currency),
+                body=schema.tax_lots_rows(trades, currency, money_symbols=False),
             )
             for account, trades in per_account
         ]
@@ -601,7 +653,9 @@ class ReportManager:
 
         body: list[list[str]] = []
         for _account, rows in per_account:
-            body.extend(schema.holdings_rows(rows, currency))
+            body.extend(
+                schema.holdings_rows(rows, currency, money_symbols=False),
+            )
 
         return write_csv(
             self.csv_dir / f"{base_filename}.csv",
@@ -621,7 +675,7 @@ class ReportManager:
             ExcelSection(
                 sheet_name=display_account_name(account) or "Unknown",
                 headers=schema.HOLDINGS_HEADERS,
-                body=schema.holdings_rows(rows, currency),
+                body=schema.holdings_rows(rows, currency, money_symbols=False),
             )
             for account, rows in per_account
         ]
@@ -658,7 +712,7 @@ class ReportManager:
                 PdfSection(
                     subtitle=f"Account: {display_account_name(account)}",
                     headers=schema.HOLDINGS_HEADERS,
-                    body=schema.holdings_rows(rows, currency),
+                    body=schema.holdings_rows(rows, currency, money_symbols=True),
                     totals={
                         "Total Positions": str(len(rows)),
                         "Total Invested":
@@ -699,37 +753,55 @@ class ReportManager:
         stamp: str,
     ) -> list[Path]:
         headers = schema.combined_headers(payload.account_names)
-        body = schema.combined_rows(
+        body_pdf = schema.combined_rows(
             payload.combined_portfolio,
             payload.account_names,
             payload.currency,
+            money_symbols=True,
+        )
+        body_tabular = schema.combined_rows(
+            payload.combined_portfolio,
+            payload.account_names,
+            payload.currency,
+            money_symbols=False,
         )
 
         total_invested = sum(
             (r.total_invested for r in payload.combined_portfolio),
             start=ZERO,
         )
+        has_cash = any(r.is_cash for r in payload.combined_portfolio)
+        n_isins = sum(1 for r in payload.combined_portfolio if not r.is_cash)
         totals = {
-            "Total ISINs": str(len(payload.combined_portfolio)),
+            "Securities (ISINs)": str(n_isins),
             "Total Invested (Family)": format_money(
                 total_invested, payload.currency,
             ),
         }
+
+        combined_section_notes: tuple[str, ...] = (_INVESTED_CAPITAL_PDF_NOTES[0],)
+        if has_cash:
+            combined_section_notes = combined_section_notes + (
+                "For the Cash row, per-account columns show current idle cash "
+                "(currency) you entered—not share quantities.",
+            )
 
         return self._dispatch_single_section(
             base_filename=f"combined_portfolio_{stamp}",
             sheet_name="Combined Portfolio",
             title="Combined Family Portfolio Report",
             headers=headers,
-            body=body,
+            body=body_pdf,
             totals=totals,
             formats=formats,
+            tabular_body=body_tabular,
             source_dates=payload.source_dates,
             pdf_col_widths_mm=_combined_col_widths_mm(
                 len(payload.account_names),
             ),
             pdf_wrap_columns=(_COMBINED_SYMBOL_COL_INDEX,),
-            pdf_footer_notes=_INVESTED_CAPITAL_PDF_NOTES,
+            pdf_footer_notes=None,
+            pdf_notes_after_totals=combined_section_notes,
         )
 
     # ------------------------------------------------------------------
@@ -816,7 +888,9 @@ class ReportManager:
     ) -> Path:
         body: list[list[str]] = []
         for _account, rows in per_account:
-            body.extend(schema.cost_basis_rows(rows, currency))
+            body.extend(
+                schema.cost_basis_rows(rows, currency, money_symbols=False),
+            )
 
         return write_csv(
             self.csv_dir / f"{base_filename}.csv",
@@ -834,7 +908,7 @@ class ReportManager:
             ExcelSection(
                 sheet_name=display_account_name(account) or "Unknown",
                 headers=schema.COST_BASIS_HEADERS,
-                body=schema.cost_basis_rows(rows, currency),
+                body=schema.cost_basis_rows(rows, currency, money_symbols=False),
             )
             for account, rows in per_account
         ]
@@ -865,7 +939,7 @@ class ReportManager:
                 PdfSection(
                     subtitle=f"Account: {display_account_name(account)}",
                     headers=schema.COST_BASIS_HEADERS,
-                    body=schema.cost_basis_rows(rows, currency),
+                    body=schema.cost_basis_rows(rows, currency, money_symbols=True),
                     totals={
                         "Open Lots": str(len(rows)),
                         "Total Cost Basis":
@@ -909,24 +983,35 @@ class ReportManager:
         body: list[list[str]],
         totals: dict[str, str],
         formats: list[ReportFormat],
+        tabular_body: Optional[list[list[str]]] = None,
         source_dates: Optional[dict[str, datetime]] = None,
         pdf_col_widths_mm: Optional[list[float]] = None,
         pdf_wrap_columns: tuple[int, ...] = (),
         pdf_footer_notes: Optional[Sequence[str]] = None,
+        pdf_notes_after_totals: tuple[str, ...] = (),
     ) -> list[Path]:
         """Render one logical report through every requested format."""
 
         outputs: list[Path] = []
+        csv_excel_body = tabular_body if tabular_body is not None else body
 
         if ReportFormat.CSV in formats:
             outputs.append(write_csv(
-                self.csv_dir / f"{base_filename}.csv", headers, body,
+                self.csv_dir / f"{base_filename}.csv",
+                headers,
+                csv_excel_body,
             ))
 
         if ReportFormat.EXCEL in formats:
             outputs.append(write_excel(
                 self.excel_dir / f"{base_filename}.xlsx",
-                [ExcelSection(sheet_name=sheet_name, headers=headers, body=body)],
+                [
+                    ExcelSection(
+                        sheet_name=sheet_name,
+                        headers=headers,
+                        body=csv_excel_body,
+                    )
+                ],
             ))
 
         if ReportFormat.PDF in formats:
@@ -939,6 +1024,7 @@ class ReportManager:
                     totals=totals,
                     col_widths_mm=pdf_col_widths_mm,
                     wrap_columns=pdf_wrap_columns,
+                    notes_after_totals=pdf_notes_after_totals,
                 )],
                 source_dates=_format_source_dates(source_dates),
                 footer_notes=pdf_footer_notes,

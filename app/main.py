@@ -1,36 +1,49 @@
 """Typer-based CLI entry point.
 
-Two commands are exposed:
+Commands:
 
-    process            Parse + run the tax-lot engine and print a
-                       summary. Useful as a smoke test before generating
-                       reports.
+    process               Parse + run the tax-lot engine and print a
+                          summary (smoke test).
 
-    generate-reports   Parse + tax-lot match + write reports in the
-                       chosen format(s) to `output/`.
+    generate-reports      Parse + tax-lot match + write selected reports.
+                          Chooses reports and formats interactively unless
+                          ``--reports`` and ``--format`` are both supplied.
 
-Both commands share an `--account` filter and a `--input-dir` override
-so the tool integrates cleanly with non-default deployments (e.g. the
-Docker image we will add later, where `/data/input` is mounted).
+    generate-cost-basis   Per-lot cost-basis transfer report only.
+
+Shared options: ``--account``, ``--input-dir``, ``--verbose``.
 """
 
 from __future__ import annotations
 
 from collections import Counter
+from decimal import Decimal
 from pathlib import Path
 from typing import Iterable, Optional
 
 import typer
 
-from app.config import DEFAULT_CURRENCY, INPUT_DIR
+from app.cli.prompts import (
+    merge_cli_report_selection,
+    parse_cash_cli_entries,
+    prompt_current_cash_interactive,
+)
+from app.config import (
+    DEFAULT_CURRENCY,
+    INPUT_DIR,
+    PORTFOLIO_LEDGER_ISIN_IGNORE_RULES,
+)
 from app.models import Transaction
-from app.reports import ReportFormat, ReportManager, ReportPayload
+from app.reports import ReportFormat, ReportKind, ReportManager, ReportPayload
 from app.services import (
+    HoldingRow,
     TaxLotEngine,
+    apply_portfolio_isin_exclusions,
     build_combined_portfolio,
     build_cost_basis_rows,
     build_current_holdings,
     ingest_input_directory,
+    merge_cash_into_combined,
 )
 from app.utils.decimal_utils import format_money
 from app.utils.logging import configure_logging, get_logger
@@ -63,13 +76,47 @@ InputDirOption = typer.Option(
 VerboseOption = typer.Option(
     False, "--verbose", "-v", help="Enable DEBUG-level logging."
 )
-FormatOption = typer.Option(
+ReportsOption = typer.Option(
+    None,
+    "--reports",
+    "-r",
+    help=(
+        "Logical report to generate; repeatable: tax-lots, holdings, "
+        "combined. Use together with --format for non-interactive runs."
+    ),
+)
+GenerateFormatsOption = typer.Option(
+    None,
+    "--format",
+    "-f",
+    help=(
+        "Output format(s); repeatable: csv, excel, pdf, all. "
+        "Use together with --reports for non-interactive runs."
+    ),
+)
+CashEntriesOption = typer.Option(
+    None,
+    "--cash",
+    help=(
+        "Current idle cash per account folder (non-interactive). "
+        "Repeatable as account:amount."
+    ),
+)
+CostBasisFormatOption = typer.Option(
     [ReportFormat.CSV, ReportFormat.EXCEL, ReportFormat.PDF],
     "--format",
     "-f",
     help=(
-        "Output format(s) to generate. Repeatable: "
-        "`-f csv -f pdf`. Use `--format all` for every format."
+        "Output format(s). Repeatable: `-f csv -f pdf`. "
+        "Use `-f all` for every format."
+    ),
+)
+ApplyIsinIgnoreOption = typer.Option(
+    False,
+    "--apply-isin-ignore",
+    help=(
+        "Omit holdings matched by PORTFOLIO_LEDGER_IGNORE_ISINS from current "
+        "holdings and combined portfolio reports (see .env)."
     ),
 )
 
@@ -109,21 +156,32 @@ def _detect_currency(transactions: Iterable[Transaction]) -> str:
     return counter.most_common(1)[0][0]
 
 
-def _expand_formats(formats: list[ReportFormat]) -> list[ReportFormat]:
-    """Expand `--format all` (which Typer cannot model directly).
+def _apply_isin_ignore_if_requested(
+    holdings: list[HoldingRow],
+    apply_ignore: bool,
+) -> list[HoldingRow]:
+    """Filter holdings when ``--apply-isin-ignore`` is set."""
 
-    Typer converts the literal string "all" via the enum's value-lookup,
-    which fails because there is no `ReportFormat.ALL`. We work around
-    that by accepting "all" as a sentinel and expanding it here.
-    """
+    if not apply_ignore:
+        return holdings
+    return apply_portfolio_isin_exclusions(
+        holdings,
+        PORTFOLIO_LEDGER_ISIN_IGNORE_RULES,
+    )
+
+
+def _expand_formats(formats: list[ReportFormat]) -> list[ReportFormat]:
+    """Expand :attr:`~ReportFormat.ALL` and deduplicate."""
 
     expanded: list[ReportFormat] = []
     for fmt in formats:
         if fmt is None:  # pragma: no cover - defensive
             continue
-        expanded.append(fmt)
+        if fmt == ReportFormat.ALL:
+            expanded.extend(ReportFormat.all())
+        else:
+            expanded.append(fmt)
 
-    # Deduplicate while preserving order.
     seen: set[ReportFormat] = set()
     unique: list[ReportFormat] = []
     for fmt in expanded:
@@ -140,6 +198,7 @@ def _expand_formats(formats: list[ReportFormat]) -> list[ReportFormat]:
 def process(
     account: Optional[str] = AccountOption,
     input_dir: Optional[Path] = InputDirOption,
+    apply_isin_ignore: bool = ApplyIsinIgnoreOption,
     verbose: bool = VerboseOption,
 ) -> None:
     """Parse transactions and run the tax-lot engine, then print a summary."""
@@ -158,6 +217,7 @@ def process(
         tax_lot_result.open_lots,
         cost_adjustments=tax_lot_result.cost_adjustments,
     )
+    holdings = _apply_isin_ignore_if_requested(holdings, apply_isin_ignore)
     combined = build_combined_portfolio(holdings)
     currency = _detect_currency(ingestion.transactions)
 
@@ -179,12 +239,23 @@ def process(
 def generate_reports(
     account: Optional[str] = AccountOption,
     input_dir: Optional[Path] = InputDirOption,
-    formats: list[ReportFormat] = FormatOption,
+    reports: Optional[list[ReportKind]] = ReportsOption,
+    formats: Optional[list[ReportFormat]] = GenerateFormatsOption,
+    cash_entries: Optional[list[str]] = CashEntriesOption,
+    apply_isin_ignore: bool = ApplyIsinIgnoreOption,
     verbose: bool = VerboseOption,
 ) -> None:
-    """Generate CSV / Excel / PDF reports for the parsed transactions."""
+    """Generate selected reports (interactive prompts unless flags fully specify)."""
 
     configure_logging(verbose=verbose)
+
+    report_plan = merge_cli_report_selection(
+        reports_arg=reports,
+        formats_arg=formats,
+    )
+    if not report_plan:
+        typer.echo("No reports selected.", err=True)
+        raise typer.Exit(code=1)
 
     ingestion = ingest_input_directory(
         input_dir=_resolve_input_dir(input_dir),
@@ -198,7 +269,35 @@ def generate_reports(
         tax_lot_result.open_lots,
         cost_adjustments=tax_lot_result.cost_adjustments,
     )
+    holdings = _apply_isin_ignore_if_requested(holdings, apply_isin_ignore)
     combined = build_combined_portfolio(holdings)
+
+    non_interactive_cash = (
+        reports is not None
+        and formats is not None
+        and len(reports) > 0
+        and len(formats) > 0
+    )
+    cash_by_account: dict[str, Decimal] = {}
+    if ReportKind.COMBINED in report_plan:
+        if non_interactive_cash:
+            cash_by_account = parse_cash_cli_entries(
+                cash_entries, ingestion.accounts,
+            )
+        elif typer.confirm(
+            "Include current cash as a position in the combined portfolio "
+            "report (family allocation %)? You will enter idle cash per folder.",
+            default=False,
+        ):
+            cash_by_account = prompt_current_cash_interactive(
+                ingestion.accounts,
+            )
+
+    combined = merge_cash_into_combined(
+        combined,
+        cash_by_account,
+        ingestion.accounts,
+    )
 
     payload = ReportPayload(
         realized_trades=tax_lot_result.realized_trades,
@@ -209,10 +308,15 @@ def generate_reports(
         currency=_detect_currency(ingestion.transactions),
     )
 
+    expanded_plan = {
+        kind: _expand_formats(list(fmt_list))
+        for kind, fmt_list in report_plan.items()
+    }
+
     manager = ReportManager()
     written = manager.write(
         payload=payload,
-        formats=_expand_formats(formats),
+        report_formats=expanded_plan,
     )
 
     typer.echo("\nGenerated reports:")
@@ -228,7 +332,7 @@ def generate_reports(
 def generate_cost_basis(
     account: Optional[str] = AccountOption,
     input_dir: Optional[Path] = InputDirOption,
-    formats: list[ReportFormat] = FormatOption,
+    formats: list[ReportFormat] = CostBasisFormatOption,
     verbose: bool = VerboseOption,
 ) -> None:
     """Generate the per-lot Cost Basis Transfer report.
