@@ -28,11 +28,17 @@ from app.cli.prompts import (
     parse_cash_cli_entries,
     prompt_current_cash_interactive,
 )
-from app.config import DEFAULT_CURRENCY, INPUT_DIR
+from app.config import (
+    DEFAULT_CURRENCY,
+    INPUT_DIR,
+    PORTFOLIO_LEDGER_ISIN_IGNORE_RULES,
+)
 from app.models import Transaction
 from app.reports import ReportFormat, ReportKind, ReportManager, ReportPayload
 from app.services import (
+    HoldingRow,
     TaxLotEngine,
+    apply_portfolio_isin_exclusions,
     build_combined_portfolio,
     build_cost_basis_rows,
     build_current_holdings,
@@ -105,6 +111,14 @@ CostBasisFormatOption = typer.Option(
         "Use `-f all` for every format."
     ),
 )
+ApplyIsinIgnoreOption = typer.Option(
+    False,
+    "--apply-isin-ignore",
+    help=(
+        "Omit holdings matched by PORTFOLIO_LEDGER_IGNORE_ISINS from current "
+        "holdings and combined portfolio reports (see .env)."
+    ),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +156,20 @@ def _detect_currency(transactions: Iterable[Transaction]) -> str:
     return counter.most_common(1)[0][0]
 
 
+def _apply_isin_ignore_if_requested(
+    holdings: list[HoldingRow],
+    apply_ignore: bool,
+) -> list[HoldingRow]:
+    """Filter holdings when ``--apply-isin-ignore`` is set."""
+
+    if not apply_ignore:
+        return holdings
+    return apply_portfolio_isin_exclusions(
+        holdings,
+        PORTFOLIO_LEDGER_ISIN_IGNORE_RULES,
+    )
+
+
 def _expand_formats(formats: list[ReportFormat]) -> list[ReportFormat]:
     """Expand :attr:`~ReportFormat.ALL` and deduplicate."""
 
@@ -170,6 +198,7 @@ def _expand_formats(formats: list[ReportFormat]) -> list[ReportFormat]:
 def process(
     account: Optional[str] = AccountOption,
     input_dir: Optional[Path] = InputDirOption,
+    apply_isin_ignore: bool = ApplyIsinIgnoreOption,
     verbose: bool = VerboseOption,
 ) -> None:
     """Parse transactions and run the tax-lot engine, then print a summary."""
@@ -188,6 +217,7 @@ def process(
         tax_lot_result.open_lots,
         cost_adjustments=tax_lot_result.cost_adjustments,
     )
+    holdings = _apply_isin_ignore_if_requested(holdings, apply_isin_ignore)
     combined = build_combined_portfolio(holdings)
     currency = _detect_currency(ingestion.transactions)
 
@@ -212,6 +242,7 @@ def generate_reports(
     reports: Optional[list[ReportKind]] = ReportsOption,
     formats: Optional[list[ReportFormat]] = GenerateFormatsOption,
     cash_entries: Optional[list[str]] = CashEntriesOption,
+    apply_isin_ignore: bool = ApplyIsinIgnoreOption,
     verbose: bool = VerboseOption,
 ) -> None:
     """Generate selected reports (interactive prompts unless flags fully specify)."""
@@ -238,6 +269,7 @@ def generate_reports(
         tax_lot_result.open_lots,
         cost_adjustments=tax_lot_result.cost_adjustments,
     )
+    holdings = _apply_isin_ignore_if_requested(holdings, apply_isin_ignore)
     combined = build_combined_portfolio(holdings)
 
     non_interactive_cash = (

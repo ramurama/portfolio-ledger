@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Iterable, Mapping, Optional
+from typing import Iterable, Mapping, Optional, Sequence
 
 from app.models import OpenLot
 from app.utils.decimal_utils import ZERO, safe_divide
@@ -109,6 +109,66 @@ def build_current_holdings(
     # report reads naturally regardless of insertion order.
     rows.sort(key=lambda r: (r.account_name.lower(), r.symbol.lower(), r.isin))
     return rows
+
+
+def apply_portfolio_isin_exclusions(
+    rows: Sequence[HoldingRow],
+    ignore_by_account_lower: Mapping[str, Iterable[str]],
+) -> list[HoldingRow]:
+    """Drop holdings matching configured (portfolio, ISIN) pairs and recompute %.
+
+    Keys in ``ignore_by_account_lower`` are folder names in lower case; each
+    iterable lists ISINs (any casing) to omit for that portfolio only. Used for
+    reporting views where certain securities should not appear in current
+    holdings or the combined family rollup.
+
+    Rows excluded from an account no longer contribute to that account's
+    total invested capital, so remaining rows get fresh ``portfolio_percentage``
+    values that still sum to 100 within each account (when the account has
+    positive invested capital).
+    """
+
+    if not ignore_by_account_lower:
+        return list(rows)
+
+    blocked: dict[str, frozenset[str]] = {
+        account: frozenset(isin.upper() for isin in isins)
+        for account, isins in ignore_by_account_lower.items()
+    }
+
+    def is_blocked(row: HoldingRow) -> bool:
+        isins = blocked.get(row.account_name.lower())
+        return bool(isins and row.isin.upper() in isins)
+
+    kept = [r for r in rows if not is_blocked(r)]
+    if len(kept) == len(rows):
+        return list(rows)
+
+    account_totals: dict[str, Decimal] = defaultdict(lambda: ZERO)
+    for r in kept:
+        account_totals[r.account_name] += r.invested_amount
+
+    adjusted: list[HoldingRow] = []
+    for r in kept:
+        total = account_totals[r.account_name]
+        pct = safe_divide(r.invested_amount * _HUNDRED, total)
+        adjusted.append(
+            HoldingRow(
+                account_name=r.account_name,
+                isin=r.isin,
+                symbol=r.symbol,
+                total_shares=r.total_shares,
+                average_purchase_price=r.average_purchase_price,
+                invested_amount=r.invested_amount,
+                portfolio_percentage=pct,
+                remaining_lots=r.remaining_lots,
+            )
+        )
+
+    adjusted.sort(
+        key=lambda row: (row.account_name.lower(), row.symbol.lower(), row.isin),
+    )
+    return adjusted
 
 
 # ---------------------------------------------------------------------------

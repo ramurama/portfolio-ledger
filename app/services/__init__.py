@@ -8,7 +8,11 @@ future API layer or background worker.
 """
 
 from app.services.cost_basis import CostBasisRow, build_cost_basis_rows
-from app.services.holdings import HoldingRow, build_current_holdings
+from app.services.holdings import (
+    HoldingRow,
+    apply_portfolio_isin_exclusions,
+    build_current_holdings,
+)
 from app.services.ingestion import IngestionResult, ingest_input_directory
 from app.services.portfolio import (
     CombinedHoldingRow,
@@ -21,6 +25,7 @@ __all__ = [
     "CombinedHoldingRow",
     "CostBasisRow",
     "HoldingRow",
+    "apply_portfolio_isin_exclusions",
     "IngestionResult",
     "TaxLotEngine",
     "TaxLotResult",

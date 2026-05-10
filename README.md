@@ -36,6 +36,8 @@ class registered in `app/parsers/registry.py`.
 - Single-file Typer CLI with `process`, `generate-reports`, and
   `generate-cost-basis` commands (reports can be chosen interactively or
   via `--reports` / `--format`).
+- Optional **per-portfolio ISIN exclusions** for current holdings and
+  the combined report (`PORTFOLIO_LEDGER_IGNORE_ISINS` + `--apply-isin-ignore`).
 
 ## Project layout
 
@@ -64,54 +66,77 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Usage
+## CLI commands
 
-Drop your Scalable Capital CSV exports under `input/<account_name>/`
-(one folder per person). Then:
+Drop Scalable Capital CSV exports under `input/<account_name>/` (one folder
+per person). Invoke the CLI as `python3 -m app.main <command>` (after
+activating the venv, `python -m app.main` works the same way).
+
+| Command | Purpose |
+| -------- | ------- |
+| `process` | Parse exports, run FIFO tax-lot matching, print a short summary. |
+| `generate-reports` | Write Tax Lots, Current Holdings, and/or Combined reports (CSV, Excel, PDF). |
+| `generate-cost-basis` | Write the per-lot **Cost Basis Transfer** report for broker transfers. |
+
+Shared options (where supported): `--account` / `-a` (single folder), `--input-dir`,
+`--verbose` / `-v`. For `generate-reports`, add `--reports` / `-r` and `--format` / `-f`
+for non-interactive runs; repeatable `--cash folder:amount` for combined idle cash;
+`--apply-isin-ignore` to apply `PORTFOLIO_LEDGER_IGNORE_ISINS` from `.env`.
+
+All examples in one place:
 
 ```bash
-# Smoke-test: parse + run tax-lot matching and print a summary
-python -m app.main process
+# --- process (summary only) ---
+python3 -m app.main process
+python3 -m app.main process --account ramu
+python3 -m app.main process --verbose
+python3 -m app.main process --apply-isin-ignore
 
-# Generate reports (interactive: choose Tax Lots / Holdings / Combined
-# and CSV / Excel / PDF per report; optional idle-cash prompts for Combined)
-python -m app.main generate-reports
+# --- generate-reports (interactive if --reports / --format incomplete) ---
+python3 -m app.main generate-reports
 
-# Non-interactive: pick logical reports and formats explicitly
-python -m app.main generate-reports \
+python3 -m app.main generate-reports \
   --reports tax-lots --reports holdings --reports combined \
   --format all
 
-# Combined report with current idle cash per folder (non-interactive)
-python -m app.main generate-reports --reports combined --format pdf \
+python3 -m app.main generate-reports --reports combined --format pdf \
   --cash ramu:12000 --cash rakshana:8000
 
-# Filter to one account (folder name)
-python -m app.main process --account ramu
-python -m app.main generate-reports --account ramu
+python3 -m app.main generate-reports --account ramu
 
-# Only --format set: CLI asks which reports to generate (yes/no each)
-python -m app.main generate-reports -f csv
+# Partially interactive: only formats → prompts for which reports
+python3 -m app.main generate-reports -f csv
 
-# Only --reports set: CLI asks which formats to use for those reports
-python -m app.main generate-reports --reports combined --reports tax-lots
+# Partially interactive: only reports → prompts for formats
+python3 -m app.main generate-reports --reports combined --reports tax-lots
 
-# Verbose / debug logging
-python -m app.main process --verbose
+# Omit configured ISINs from current holdings + combined (see Environment overrides)
+python3 -m app.main generate-reports \
+  --reports holdings --reports combined --format csv \
+  --apply-isin-ignore
+
+python3 -m app.main generate-reports --verbose
+
+# --- generate-cost-basis (one row per open lot) ---
+python3 -m app.main generate-cost-basis
+python3 -m app.main generate-cost-basis --account ramu -f pdf
+
+# --- tests ---
+python3 -m pytest tests/ -q
 ```
 
-For **Combined Family Portfolio**, you can include **current idle cash**
-as its own row (liquid balances not invested in securities). Interactive
-runs ask whether to include cash and prompt once per account folder under
-`input/`. Those amounts are used directly for the Cash row and family **%
-of portfolio** math (no tax or cost-basis adjustment applied here).
+**Combined report — idle cash.** Interactive runs can ask whether to add a **Cash**
+row and prompt once per folder under `input/`. Amounts drive the Cash row and family
+**% of portfolio** (no tax or cost-basis adjustment). With both `--reports` and
+`--format`, pass repeatable `--cash folder:amount`; omit `--cash` for securities only.
 
-With `--reports` and `--format`, pass repeatable `--cash folder:amount`
-for non-interactive runs (omit `--cash` for a securities-only combined view).
+**ISIN ignore list.** Set `PORTFOLIO_LEDGER_IGNORE_ISINS` in `.env` (comma-separated
+`folder:ISIN`, folder name case-insensitive). Exclusions apply only when you pass
+`--apply-isin-ignore` on `process` or `generate-reports`; tax lots and cost-basis
+reports are unaffected.
 
-Reports are written into `output/csv/`, `output/excel/`, `output/pdf/`
-with timestamps in the filename so historical runs do not overwrite
-each other.
+Reports go to `output/csv/`, `output/excel/`, `output/pdf/` with timestamps in each
+filename.
 
 ### Cost Basis Transfer report (broker-to-broker transfers)
 
@@ -119,14 +144,7 @@ When transferring assets out of Scalable Capital (e.g. into IBKR), the
 receiving broker needs the acquisition price of **each lot** so future
 sells stay tax-matched correctly. The averaged "Current Holdings"
 report is not enough - you need one row per still-open tax lot.
-
-```bash
-# Generate one row per open lot in every format
-python -m app.main generate-cost-basis
-
-# Filter or limit formats just like generate-reports
-python -m app.main generate-cost-basis --account ramu -f pdf
-```
+Use `generate-cost-basis` (see examples above).
 
 Output filenames: `cost_basis_transfer_{stamp}.{csv,xlsx,pdf}`. Each
 row carries `Account`, `ISIN`, `Symbol`, `Acquisition Date`,
@@ -203,22 +221,18 @@ intake form using the
 [Cost Basis Transfer report](#cost-basis-transfer-report-broker-to-broker-transfers)
 as a starting point.
 
-## Running tests
-
-```bash
-python -m pytest tests/ -q
-```
-
 ## Environment overrides
 
-Environment variables let you point the tool at non-default directories
-and narrow transaction types — useful when running inside Docker:
+Environment variables let you point the tool at non-default directories,
+narrow transaction types, and optionally list ISINs to hide from holdings /
+combined reporting — useful when running inside Docker:
 
 | Variable                                      | Purpose |
 | --------------------------------------------- | ------- |
 | `PORTFOLIO_LEDGER_INPUT_DIR`                  | Override the default `./input/`. |
 | `PORTFOLIO_LEDGER_OUTPUT_DIR`                 | Override the default `./output/`. |
 | `PORTFOLIO_LEDGER_TRANSACTION_TYPES`          | Comma-separated list of raw broker `type` values to admit (default includes `Buy,Sell,Savings plan,Distribution,Taxes,Tax,Security transfer,Corporate action`). Anything not listed is dropped at parse time. |
+| `PORTFOLIO_LEDGER_IGNORE_ISINS`                 | Optional. Comma-separated `folder:ISIN` pairs (e.g. `rakshana:DE000EWG2LD7`). Used only with `--apply-isin-ignore`; see [CLI commands](#cli-commands). |
 
 A starter `.env.template` is committed at the repo root - copy it to
 `.env` and edit if you need to override the defaults.
