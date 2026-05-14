@@ -33,7 +33,7 @@ from app.config import (
     INPUT_DIR,
     PORTFOLIO_LEDGER_ISIN_IGNORE_RULES,
 )
-from app.models import Transaction
+from app.models import Transaction, TransactionType
 from app.reports import ReportFormat, ReportKind, ReportManager, ReportPayload
 from app.services import (
     HoldingRow,
@@ -156,6 +156,20 @@ def _detect_currency(transactions: Iterable[Transaction]) -> str:
     return counter.most_common(1)[0][0]
 
 
+def _aggregate_dividends_received(
+    transactions: Iterable[Transaction],
+) -> tuple[Decimal, int]:
+    """Sum cash inflows from dividend rows (broker type ``Distribution``)."""
+
+    total = Decimal("0")
+    n_rows = 0
+    for tx in transactions:
+        if tx.transaction_type is TransactionType.DISTRIBUTION:
+            total += tx.total_amount
+            n_rows += 1
+    return total, n_rows
+
+
 def _apply_isin_ignore_if_requested(
     holdings: list[HoldingRow],
     apply_ignore: bool,
@@ -220,6 +234,9 @@ def process(
     holdings = _apply_isin_ignore_if_requested(holdings, apply_isin_ignore)
     combined = build_combined_portfolio(holdings)
     currency = _detect_currency(ingestion.transactions)
+    total_dividends, n_dividend_rows = _aggregate_dividends_received(
+        ingestion.transactions
+    )
 
     _print_summary(
         accounts=ingestion.accounts,
@@ -229,6 +246,8 @@ def process(
         currency=currency,
         n_holdings=len(holdings),
         n_combined=len(combined),
+        n_dividend_rows=n_dividend_rows,
+        total_dividends=total_dividends,
     )
 
 
@@ -392,6 +411,8 @@ def _print_summary(
     currency: str,
     n_holdings: int,
     n_combined: int,
+    n_dividend_rows: int,
+    total_dividends: Decimal,
 ) -> None:
     """Pretty-print the post-processing summary to stdout."""
 
@@ -406,6 +427,12 @@ def _print_summary(
         "Total realized G/L     : "
         + format_money(total_realized, currency)
         + "  (PRE-TAX; withholding tax tracked separately)"
+    )
+    typer.echo(f"Dividend rows          : {n_dividend_rows}")
+    typer.echo(
+        "Total dividends        : "
+        + format_money(total_dividends, currency)
+        + "  (sum of Distribution cash inflows)"
     )
     typer.echo(f"Open positions         : {n_holdings}")
     typer.echo(f"Combined ISINs         : {n_combined}")
