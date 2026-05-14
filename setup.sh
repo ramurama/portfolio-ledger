@@ -28,6 +28,7 @@ fi
 echo "Installing dependencies into ./${VENV_DIR}/ ..."
 "./${VENV_DIR}/bin/pip" install --upgrade pip >/dev/null
 "./${VENV_DIR}/bin/pip" install -r requirements.txt
+"./${VENV_DIR}/bin/pip" install -e .
 
 echo
 echo "Running test suite ..."
@@ -39,9 +40,13 @@ Setup complete. Activate the venv with:
 
     source venv/bin/activate
 
-Then run:
+Then run (after: source venv/bin/activate):
 
-    python -m app.main process
-    python -m app.main generate-reports
+    pl process
+    pl generate-reports
+
+Same commands work as: python -m app.main …
+From the repo root you can also use: make process  or  make reports
+(uses ./venv/bin/python; no need to activate the venv for make).
 
 EOF

@@ -42,6 +42,7 @@ class registered in `app/parsers/registry.py`.
 ## Project layout
 
 ```
+Makefile               Shortcuts: make process, make full-report, make run, …
 app/
   config.py              Constants and filesystem paths.
   main.py                Typer CLI entrypoint (python -m app.main).
@@ -64,13 +65,67 @@ tests/                   Pytest unit tests.
 python3.12 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+pip install -e .
 ```
+
+The editable install (`pip install -e .`) registers two entry points on
+your PATH when the venv is active: **`pl`** and **`portfolio-ledger`**
+(both invoke the same Typer app). Example: `pl process --account ramu`.
+
+For command shortcuts from the repository root without activating the venv,
+see **[Makefile](#makefile)** below.
+
+## Makefile
+
+The [`Makefile`](Makefile) at the project root runs the same Typer CLI as
+`python -m app.main`, using **`./venv/bin/python`** by default (the path
+`setup.sh` creates). Run `make` from the **repository root**, or from elsewhere
+with **`make -C /path/to/portfolio-ledger <target>`**.
+
+### Targets
+
+Run **`make help`** to print this list from your machine.
+
+| Target | Description |
+| --- | --- |
+| `make help` | Show available targets and what they invoke. |
+| `make process` | Parse inputs, run FIFO tax lots, print the processing summary. |
+| `make reports` | Start `generate-reports` in **interactive** mode (choose reports and formats in the terminal). |
+| `make full-report` | Non-interactive **combined** report only: **PDF**, with **`--apply-isin-ignore`**. The recipe does not pass `--cash`, so the CLI asks whether to add idle cash, then prompts once per account folder. For a fully non-interactive run, use **`make run`** with explicit **`--cash`** flags instead. |
+| `make cost-basis` | Run **`generate-cost-basis`** (per-lot cost basis transfer report). |
+| `make install-editable` | Run **`pip install -e .`** using `./venv/bin/pip`, registering the **`pl`** and **`portfolio-ledger`** console scripts into that venv. |
+| `make run ARGS='…'` | Forward **any** subcommand and flags: the value of **`ARGS`** is appended after `python -m app.main`. Use **one quoted string** so the shell preserves spaces and flags. |
+
+### Makefile variables
+
+| Variable | Default | Used by |
+| --- | --- | --- |
+| `PYTHON` | `./venv/bin/python` | All targets that invoke the app. |
+| `PIP` | `./venv/bin/pip` | `install-editable` only. |
+| `ARGS` | *(empty)* | **`make run` only** — must be set to the full CLI tail (e.g. `process --account ramu`). |
+
+Examples:
+
+```bash
+make process
+make full-report
+make install-editable
+
+# Same as: python -m app.main process --account ramu --verbose
+make run ARGS='process --account ramu --verbose'
+
+# Fully non-interactive combined PDF with explicit cash (no prompts)
+make run ARGS='generate-reports --reports combined --format pdf --apply-isin-ignore --cash ramu:26490 --cash rakshana:7192'
+```
+
+**Note:** `make` does not pass extra words on the command line to the recipe. For anything beyond the fixed targets, use **`make run ARGS='…'`** (or call `pl` / `python -m app.main` directly).
 
 ## CLI commands
 
 Drop Scalable Capital CSV exports under `input/<account_name>/` (one folder
 per person). Invoke the CLI as `python3 -m app.main <command>` (after
-activating the venv, `python -m app.main` works the same way).
+activating the venv, `python -m app.main` works the same way). If you ran
+`pip install -e .`, use `pl <command>` or `portfolio-ledger <command>` instead.
 
 | Command | Purpose |
 | -------- | ------- |
@@ -88,6 +143,8 @@ All examples in one place:
 ```bash
 # --- process (summary only) ---
 python3 -m app.main process
+pl process                    # same, after: pip install -e .
+make process                  # same, uses ./venv/bin/python from repo root
 python3 -m app.main process --account ramu
 python3 -m app.main process --verbose
 python3 -m app.main process --apply-isin-ignore
@@ -127,8 +184,11 @@ python3 -m pytest tests/ -q
 
 **Combined report — idle cash.** Interactive runs can ask whether to add a **Cash**
 row and prompt once per folder under `input/`. Amounts drive the Cash row and family
-**Allocation** (no tax or cost-basis adjustment). With both `--reports` and
-`--format`, pass repeatable `--cash folder:amount`; omit `--cash` for securities only.
+**Allocation** (no tax or cost-basis adjustment). When you pass both `--reports` and
+`--format` (non-interactive) **and** include the combined report: if you pass one or
+more `--cash folder:amount` flags, those values are used; if you omit `--cash`
+entirely, you are asked **whether** to add cash; if you choose yes, you are **prompted
+once per folder**. Use `--cash account:0` when you want no idle cash without any prompts.
 
 **ISIN ignore list.** Set `PORTFOLIO_LEDGER_IGNORE_ISINS` in `.env` (comma-separated
 `folder:ISIN`, folder name case-insensitive). Exclusions apply only when you pass

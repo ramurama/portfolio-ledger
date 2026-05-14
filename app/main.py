@@ -98,8 +98,10 @@ CashEntriesOption = typer.Option(
     None,
     "--cash",
     help=(
-        "Current idle cash per account folder (non-interactive). "
-        "Repeatable as account:amount."
+        "Current idle cash per account folder. Repeatable as account:amount. "
+        "With combined report in a non-interactive run: use one or more "
+        "--cash flags, or omit them to be asked whether to add cash and then "
+        "prompted per folder (or pass account:0 to skip prompts with zero cash)."
     ),
 )
 CostBasisFormatOption = typer.Option(
@@ -300,9 +302,21 @@ def generate_reports(
     cash_by_account: dict[str, Decimal] = {}
     if ReportKind.COMBINED in report_plan:
         if non_interactive_cash:
-            cash_by_account = parse_cash_cli_entries(
-                cash_entries, ingestion.accounts,
-            )
+            if cash_entries:
+                cash_by_account = parse_cash_cli_entries(
+                    cash_entries, ingestion.accounts,
+                )
+            else:
+                typer.echo("")
+                typer.echo("")
+                if typer.confirm(
+                    "Provide current idle cash for the combined report "
+                    "(one amount per portfolio folder; affects family allocation %)?",
+                    default=False,
+                ):
+                    cash_by_account = prompt_current_cash_interactive(
+                        ingestion.accounts,
+                    )
         elif typer.confirm(
             "Include current cash as a position in the combined portfolio "
             "report (family allocation %)? You will enter idle cash per folder.",
