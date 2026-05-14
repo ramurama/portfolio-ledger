@@ -130,7 +130,7 @@ HOLDINGS_HEADERS: list[str] = [
     "Total Shares",
     "Average Purchase Price",
     "Invested Amount",
-    "% of Portfolio",
+    "Allocation",
 ]
 
 
@@ -186,9 +186,9 @@ def combined_headers(account_names: list[str]) -> list[str]:
         "Combined Avg Price",
         "Total Invested",
         # Family-level allocation: this ISIN's share of the family's
-        # total invested capital. Mirrors the per-account "% of
-        # Portfolio" column in the holdings report.
-        "% of Family Portfolio",
+        # total invested capital. Mirrors the per-account "Allocation"
+        # column in the holdings report.
+        "Allocation",
     ]
     return base + per_account + tail
 

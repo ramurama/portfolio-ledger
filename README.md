@@ -127,7 +127,7 @@ python3 -m pytest tests/ -q
 
 **Combined report — idle cash.** Interactive runs can ask whether to add a **Cash**
 row and prompt once per folder under `input/`. Amounts drive the Cash row and family
-**% of portfolio** (no tax or cost-basis adjustment). With both `--reports` and
+**Allocation** (no tax or cost-basis adjustment). With both `--reports` and
 `--format`, pass repeatable `--cash folder:amount`; omit `--cash` for securities only.
 
 **ISIN ignore list.** Set `PORTFOLIO_LEDGER_IGNORE_ISINS` in `.env` (comma-separated

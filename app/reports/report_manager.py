@@ -111,7 +111,7 @@ _TAX_LOTS_COL_WIDTHS_MM: list[float] = [18, 25, 60, 22, 22, 22, 26, 26, 38]
 _TAX_LOTS_SYMBOL_COL_INDEX: int = 2
 
 # Holdings: Account, ISIN, Symbol(wrap), TotalShares, AvgPrice,
-#           InvestedAmount, %
+#           InvestedAmount, Allocation
 _HOLDINGS_COL_WIDTHS_MM: list[float] = [20, 25, 68, 26, 34, 32, 26]
 _HOLDINGS_SYMBOL_COL_INDEX: int = 2
 
@@ -134,11 +134,11 @@ def _combined_col_widths_mm(num_accounts: int) -> list[float]:
 
         ISIN (25), Symbol(wrap) (45), N x Shares-per-account (adaptive),
         Combined Shares (25), Combined Avg Price (30),
-        Total Invested (25), % of Family Portfolio (30).
+        Total Invested (25), Allocation (30).
 
     The fixed columns (everything except per-account shares) are sized
     generously enough that headers like "Combined Avg Price" or
-    "% of Family Portfolio" fit comfortably on a single line. The
+    "Allocation" fit comfortably on a single line. The
     per-account column starts at a generous 28mm (enough to fit
     "Shares (Rakshana)" without wrapping) and shrinks as more accounts
     appear, so the table never overflows the page width.
@@ -150,7 +150,7 @@ def _combined_col_widths_mm(num_accounts: int) -> list[float]:
     """
 
     fixed_pre = [25.0, 45.0]                  # ISIN, Symbol(wrap)
-    fixed_tail = [25.0, 30.0, 25.0, 30.0]     # Combined / Avg / Invested / %
+    fixed_tail = [25.0, 30.0, 25.0, 30.0]     # Combined / Avg / Invested / Alloc
 
     target_per_account = 28.0
     min_per_account = 18.0

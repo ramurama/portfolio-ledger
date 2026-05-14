@@ -1,7 +1,7 @@
 """Per-lot cost-basis view used for broker transfers (e.g. IBKR).
 
 Most reports surface AVERAGED metrics per ISIN: total shares, weighted
-average price, % of portfolio. That works for "what do I own" but is
+average price, allocation. That works for "what do I own" but is
 useless when transferring assets between brokers, because the receiving
 broker (IBKR) needs the acquisition price of *each lot* to keep future
 sells correctly tax-matched.

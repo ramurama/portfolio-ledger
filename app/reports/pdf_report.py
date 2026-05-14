@@ -222,7 +222,7 @@ _CELL_PARAGRAPH_STYLE = ParagraphStyle(
 )
 
 # Header cells are always rendered as Paragraphs so long titles like
-# "% of Family Portfolio" or "Average Purchase Price" auto-wrap onto a
+# "Allocation" or "Average Purchase Price" auto-wrap onto a
 # second line instead of bleeding into the neighbouring column. The
 # colour matches what the TableStyle would otherwise draw (white on
 # the brand-blue background) and the font size is identical to what
@@ -563,7 +563,7 @@ def _build_section_flowables(section: PdfSection) -> list:
         # `wrap_columns` become Paragraphs so long content wraps inside
         # its assigned cell width instead of pushing the whole table
         # off the page. Headers are *always* wrapped so long titles
-        # (e.g. "Average Purchase Price", "% of Family Portfolio")
+        # (e.g. "Average Purchase Price", "Allocation")
         # fold onto a second line instead of bleeding into the next
         # column - regardless of how the operator chose `col_widths_mm`.
         body_spaced = [
