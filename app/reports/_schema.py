@@ -29,7 +29,7 @@ from app.services.cost_basis import CostBasisRow
 from app.services.holdings import HoldingRow
 from app.services.portfolio import CombinedHoldingRow
 from app.utils.decimal_utils import format_money, format_us_decimal
-from app.utils.text import display_account_name
+from app.utils.text import display_account_name, short_account_label
 
 
 # ---------------------------------------------------------------------------
@@ -209,18 +209,39 @@ def combined_headers(
     return base + per_account + tail
 
 
+def combined_pdf_headers(
+    account_names: list[str],
+    *,
+    include_market_prices: bool = False,
+) -> list[str]:
+    """Short headers for the combined portfolio PDF (fits landscape A4)."""
+
+    base = ["ISIN", "Sym"]
+    per_account = [
+        display_account_name(name) if name.lower() == "rakshana"
+        else short_account_label(name)
+        for name in account_names
+    ]
+    tail = ["Combined", "Avg"]
+    if include_market_prices:
+        tail.extend(["LTP", "Mkt. Value", "P/L"])
+    tail.extend(["Invested", "Alloc."])
+    return base + per_account + tail
+
+
 def _combined_market_price_cells(
     row: CombinedHoldingRow,
     currency: str,
     *,
     money_symbols: bool,
+    price_quantize: str = PRICE_QUANTIZE,
 ) -> list[str]:
     sym = money_symbols
     if row.current_price is None:
         return ["", "", ""]
     return [
         format_money(
-            row.current_price, currency, PRICE_QUANTIZE,
+            row.current_price, currency, price_quantize,
             include_currency_symbol=sym,
         ),
         format_money(
@@ -245,15 +266,20 @@ def combined_rows(
     *,
     money_symbols: bool = True,
     include_market_prices: bool = False,
+    compact: bool = False,
 ) -> list[list[str]]:
     """Render the combined-portfolio table body in `currency`.
 
     `account_names` enforces a consistent column order across rows -
     even when an ISIN is held by only some of the accounts the table
     stays rectangular (empty cells render as ``""``).
+
+    ``compact=True`` uses fewer decimals for PDF columns (shares/prices).
     """
 
     sym = money_symbols
+    share_q = "0.01" if compact else SHARE_QUANTIZE
+    price_q = "0.01" if compact else PRICE_QUANTIZE
     body: list[list[str]] = []
     for r in rows:
         record = [r.isin, r.symbol]
@@ -291,7 +317,7 @@ def combined_rows(
         for name in account_names:
             shares = r.shares_per_account.get(name)
             record.append(
-                format_us_decimal(shares, SHARE_QUANTIZE, thousands=True)
+                format_us_decimal(shares, share_q, thousands=not compact)
                 if shares is not None else ""
             )
 
@@ -302,17 +328,21 @@ def combined_rows(
             + "%"
         )
         record.append(
-            format_us_decimal(r.combined_shares, SHARE_QUANTIZE, thousands=True),
+            format_us_decimal(
+                r.combined_shares, share_q, thousands=not compact,
+            ),
         )
         record.append(
             format_money(
-                r.combined_average_price, currency, PRICE_QUANTIZE,
+                r.combined_average_price, currency, price_q,
                 include_currency_symbol=sym,
             ),
         )
         if include_market_prices:
             record.extend(
-                _combined_market_price_cells(r, currency, money_symbols=sym),
+                _combined_market_price_cells(
+                    r, currency, money_symbols=sym, price_quantize=price_q,
+                ),
             )
         record.append(
             format_money(

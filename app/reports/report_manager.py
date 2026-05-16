@@ -126,55 +126,64 @@ _COST_BASIS_SYMBOL_COL_INDEX: int = 2
 _PAGE_BUDGET_MM: float = 281.0
 
 
+def _distribute_col_widths_mm(
+  specs: list[tuple[float, float]],
+) -> list[float]:
+    """Expand column mins across ``_PAGE_BUDGET_MM`` using relative weights.
+
+    Each spec is ``(minimum_mm, weight)``. When mins exceed the page
+    budget, every column is scaled down proportionally.
+    """
+
+    if not specs:
+        return []
+
+    mins = [s[0] for s in specs]
+    weights = [s[1] for s in specs]
+    total_min = sum(mins)
+    budget = _PAGE_BUDGET_MM
+
+    if total_min >= budget:
+        scale = budget / total_min
+        return [m * scale for m in mins]
+
+    extra = budget - total_min
+    weight_sum = sum(weights)
+    return [
+        min_w + extra * (w / weight_sum)
+        for min_w, w in zip(mins, weights)
+    ]
+
+
 def _combined_col_widths_mm(
     num_accounts: int,
     *,
     include_market_prices: bool = False,
 ) -> list[float]:
-    """Build the column-width list for the combined-portfolio PDF.
+    """Build column widths that use the full printable landscape width."""
 
-    The column count varies with how many accounts the input contains,
-    so we compute the layout dynamically. Layout (left to right):
-
-        ISIN (25), Symbol(wrap) (45), N x Shares-per-account (adaptive),
-        Combined Shares (25), Combined Avg Price (30),
-        [optional: Current Price, Market Value, Unrealized G/L],
-        Total Invested (25), Allocation (30).
-
-    The fixed columns (everything except per-account shares) are sized
-    generously enough that headers like "Combined Avg Price" or
-    "Allocation" fit comfortably on a single line. The
-    per-account column starts at a generous 28mm (enough to fit
-    "Shares (Rakshana)" without wrapping) and shrinks as more accounts
-    appear, so the table never overflows the page width.
-
-    Even when the per-account column shrinks below the ideal, header
-    wrapping kicks in (see `_wrap_headers` in pdf_report) and the
-    layout still reads cleanly - just on two header lines instead of
-    one.
-    """
-
-    fixed_pre = [25.0, 45.0]                  # ISIN, Symbol(wrap)
-    fixed_mid = [25.0, 30.0]                  # Combined Shares / Combined Avg Price
-    market_cols = [28.0, 30.0, 30.0] if include_market_prices else []
-    fixed_tail = [25.0, 30.0]                 # Total Invested / Allocation
-    fixed_tail_all = fixed_mid + market_cols + fixed_tail
-
-    target_per_account = 28.0
-    min_per_account = 18.0
-
-    if num_accounts <= 0:
-        # Defensive: a combined report without accounts is weird but
-        # shouldn't crash the renderer. Just emit the fixed columns.
-        return fixed_pre + fixed_tail_all
-
-    available = _PAGE_BUDGET_MM - sum(fixed_pre) - sum(fixed_tail_all)
-    per_account = max(
-        min_per_account,
-        min(target_per_account, available / num_accounts),
+    specs: list[tuple[float, float]] = [
+        (26.0, 1.0),   # ISIN — single line for 12-char codes
+        (30.0, 1.4),   # Symbol (wrap)
+    ]
+    specs.extend((16.0, 1.0) for _ in range(max(num_accounts, 0)))
+    specs.append((16.0, 0.9))   # Combined shares
+    specs.append((18.0, 1.1))   # Avg
+    if include_market_prices:
+        specs.extend(
+            [
+                (18.0, 1.1),   # Last
+                (20.0, 1.2),   # Mkt.
+                (18.0, 1.0),   # G/L
+            ]
+        )
+    specs.extend(
+        [
+            (20.0, 1.2),   # Invest.
+            (12.0, 0.7),   # Alloc%
+        ]
     )
-
-    return fixed_pre + [per_account] * num_accounts + fixed_tail_all
+    return _distribute_col_widths_mm(specs)
 
 
 _COMBINED_SYMBOL_COL_INDEX: int = 1
@@ -767,12 +776,17 @@ class ReportManager:
             payload.account_names,
             include_market_prices=include_prices,
         )
+        pdf_headers = schema.combined_pdf_headers(
+            payload.account_names,
+            include_market_prices=include_prices,
+        )
         body_pdf = schema.combined_rows(
             payload.combined_portfolio,
             payload.account_names,
             payload.currency,
             money_symbols=True,
             include_market_prices=include_prices,
+            compact=True,
         )
         body_tabular = schema.combined_rows(
             payload.combined_portfolio,
@@ -842,6 +856,7 @@ class ReportManager:
             formats=formats,
             tabular_body=body_tabular,
             source_dates=payload.source_dates,
+            pdf_headers=pdf_headers,
             pdf_col_widths_mm=_combined_col_widths_mm(
                 len(payload.account_names),
                 include_market_prices=include_prices,
@@ -1032,6 +1047,7 @@ class ReportManager:
         formats: list[ReportFormat],
         tabular_body: Optional[list[list[str]]] = None,
         source_dates: Optional[dict[str, datetime]] = None,
+        pdf_headers: Optional[list[str]] = None,
         pdf_col_widths_mm: Optional[list[float]] = None,
         pdf_wrap_columns: tuple[int, ...] = (),
         pdf_footer_notes: Optional[Sequence[str]] = None,
@@ -1066,7 +1082,7 @@ class ReportManager:
                 self.pdf_dir / f"{base_filename}.pdf",
                 title=title,
                 sections=[PdfSection(
-                    headers=headers,
+                    headers=pdf_headers if pdf_headers is not None else headers,
                     body=body,
                     totals=totals,
                     col_widths_mm=pdf_col_widths_mm,

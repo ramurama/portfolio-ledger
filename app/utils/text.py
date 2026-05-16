@@ -25,3 +25,12 @@ def display_account_name(name: str) -> str:
     if not name:
         return name
     return name[:1].upper() + name[1:]
+
+
+def short_account_label(name: str, *, max_len: int = 4) -> str:
+    """Abbreviated account label for tight PDF table headers."""
+
+    display = display_account_name(name)
+    if len(display) <= max_len:
+        return display
+    return display[:max_len] + "."
