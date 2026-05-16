@@ -7,6 +7,7 @@ from decimal import Decimal
 from app.services.portfolio import (
     CombinedHoldingRow,
     combined_family_price_totals,
+    recompute_family_allocation_by_market_value,
 )
 
 
@@ -57,3 +58,15 @@ def test_footer_totals_match_market_minus_invested() -> None:
     assert market == Decimal("1800")  # 1100 + 500 at cost + 200 cash
     assert unrealized == Decimal("100")
     assert market - invested == unrealized
+
+
+def test_allocation_percentages_use_market_value_when_recomputed() -> None:
+    rows = [
+        _security("ISIN_A", "1000", market_value="1500"),
+        _security("ISIN_B", "1000", market_value="500"),
+    ]
+    updated = recompute_family_allocation_by_market_value(rows)
+
+    assert updated[0].family_percentage == Decimal("75")
+    assert updated[1].family_percentage == Decimal("25")
+    assert sum(r.family_percentage for r in updated) == Decimal("100")

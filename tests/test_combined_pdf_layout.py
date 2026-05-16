@@ -24,7 +24,7 @@ def test_combined_pdf_headers_are_short() -> None:
     )
     assert headers == [
         "ISIN",
-        "Sym",
+        "Name",
         "Rakshana",
         "Ramu",
         "Combined",

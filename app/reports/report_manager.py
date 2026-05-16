@@ -835,7 +835,8 @@ class ReportManager:
                 "Current prices are indicative last quotes from Yahoo Finance "
                 "(symbols resolved via OpenFIGI), shown in the report currency; "
                 "non-EUR listings are converted using Yahoo FX rates. "
-                "Not licensed market data.",
+                "Allocation % is based on market value (cost for holdings "
+                "without a live quote). Not licensed market data.",
             )
             if n_without_quote:
                 combined_section_notes = combined_section_notes + (

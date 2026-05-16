@@ -96,6 +96,56 @@ def combined_family_price_totals(
     return total_invested, total_market, total_market - total_invested
 
 
+def recompute_family_allocation_by_market_value(
+    rows: list[CombinedHoldingRow],
+) -> list[CombinedHoldingRow]:
+    """Set each row's ``family_percentage`` from its share of family market value.
+
+    Uses :func:`combined_effective_market_value` (live quote, else cost;
+    cash at face value). Call after market quotes are applied on the
+    combined report.
+    """
+
+    grand_total = sum(
+        (combined_effective_market_value(r) for r in rows),
+        start=ZERO,
+    )
+    if grand_total <= ZERO:
+        logger.warning(
+            "Cannot recompute allocation by market value: "
+            "family market total is not positive (%s).",
+            grand_total,
+        )
+        return rows
+
+    rescored: list[CombinedHoldingRow] = []
+    for row in rows:
+        slice_mv = combined_effective_market_value(row)
+        rescored.append(
+            CombinedHoldingRow(
+                isin=row.isin,
+                symbol=row.symbol,
+                shares_per_account=dict(row.shares_per_account),
+                combined_shares=row.combined_shares,
+                combined_average_price=row.combined_average_price,
+                total_invested=row.total_invested,
+                family_percentage=safe_divide(slice_mv * _HUNDRED, grand_total),
+                is_cash=row.is_cash,
+                current_price=row.current_price,
+                market_value=row.market_value,
+                unrealized_gain_loss=row.unrealized_gain_loss,
+            )
+        )
+
+    rescored.sort(
+        key=lambda r: (
+            (1, "") if r.is_cash else (0, r.symbol.lower()),
+            r.isin,
+        )
+    )
+    return rescored
+
+
 @dataclass
 class _IsinAggregate:
     """Mutable accumulator used while folding HoldingRows."""

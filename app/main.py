@@ -50,7 +50,10 @@ from app.services.market_data import (
     apply_market_quotes_to_combined,
     fetch_market_quotes_for_isins,
 )
-from app.services.portfolio import CombinedHoldingRow
+from app.services.portfolio import (
+    CombinedHoldingRow,
+    recompute_family_allocation_by_market_value,
+)
 from app.utils.decimal_utils import format_money
 from app.utils.logging import configure_logging, get_logger
 
@@ -405,6 +408,8 @@ def generate_reports(
                 combined,
                 target_currency=reporting_currency,
             )
+            if include_market_prices:
+                combined = recompute_family_allocation_by_market_value(combined)
 
     payload = ReportPayload(
         realized_trades=tax_lot_result.realized_trades,

@@ -216,7 +216,7 @@ def combined_pdf_headers(
 ) -> list[str]:
     """Short headers for the combined portfolio PDF (fits landscape A4)."""
 
-    base = ["ISIN", "Sym"]
+    base = ["ISIN", "Name"]
     per_account = [
         display_account_name(name) if name.lower() == "rakshana"
         else short_account_label(name)
