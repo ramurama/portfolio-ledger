@@ -46,7 +46,10 @@ from app.reports.excel_report import ExcelSection, write_excel
 from app.reports.pdf_report import PdfSection, write_pdf
 from app.services.cost_basis import CostBasisRow
 from app.services.holdings import HoldingRow
-from app.services.portfolio import CombinedHoldingRow
+from app.services.portfolio import (
+    CombinedHoldingRow,
+    combined_family_price_totals,
+)
 from app.utils.decimal_utils import ZERO, format_money
 from app.utils.logging import get_logger
 from app.utils.text import display_account_name
@@ -796,9 +799,8 @@ class ReportManager:
             include_market_prices=include_prices,
         )
 
-        total_invested = sum(
-            (r.total_invested for r in payload.combined_portfolio),
-            start=ZERO,
+        total_invested, total_market, total_unrealized = (
+            combined_family_price_totals(payload.combined_portfolio)
         )
         has_cash = any(r.is_cash for r in payload.combined_portfolio)
         n_isins = sum(1 for r in payload.combined_portfolio if not r.is_cash)
@@ -809,28 +811,18 @@ class ReportManager:
             ),
         }
         if include_prices:
-            total_market = sum(
-                (
-                    r.market_value
-                    for r in payload.combined_portfolio
-                    if not r.is_cash and r.market_value is not None
-                ),
-                start=ZERO,
-            )
-            total_unrealized = sum(
-                (
-                    r.unrealized_gain_loss
-                    for r in payload.combined_portfolio
-                    if not r.is_cash and r.unrealized_gain_loss is not None
-                ),
-                start=ZERO,
-            )
             totals["Total Market Value"] = format_money(
                 total_market, payload.currency,
             )
             totals["Total Unrealized G/L"] = format_money(
                 total_unrealized, payload.currency,
             )
+
+        n_without_quote = sum(
+            1
+            for r in payload.combined_portfolio
+            if not r.is_cash and r.market_value is None
+        ) if include_prices else 0
 
         combined_section_notes: tuple[str, ...] = (_INVESTED_CAPITAL_PDF_NOTES[0],)
         if has_cash:
@@ -845,6 +837,12 @@ class ReportManager:
                 "non-EUR listings are converted using Yahoo FX rates. "
                 "Not licensed market data.",
             )
+            if n_without_quote:
+                combined_section_notes = combined_section_notes + (
+                    f"Footer market value includes {n_without_quote} "
+                    "holding(s) without a live quote at cost (invested amount); "
+                    "total unrealized G/L is market value minus total invested.",
+                )
 
         return self._dispatch_single_section(
             base_filename=f"combined_portfolio_{stamp}",

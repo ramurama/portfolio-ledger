@@ -300,7 +300,18 @@ def combined_rows(
             )
             tail_cells: list[str] = ["", ""]
             if include_market_prices:
-                tail_cells.extend(["", "", ""])
+                tail_cells.extend(
+                    [
+                        "",
+                        format_money(
+                            r.market_value, currency,
+                            include_currency_symbol=sym,
+                        )
+                        if r.market_value is not None
+                        else "",
+                        "",
+                    ]
+                )
             tail_cells.extend(
                 [
                     format_money(

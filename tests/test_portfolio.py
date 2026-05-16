@@ -148,6 +148,8 @@ class TestMergeCashIntoCombined:
         )
         cash_row = by_isin["CASH"]
         assert cash_row.is_cash
+        assert cash_row.market_value == Decimal("500")
+        assert cash_row.unrealized_gain_loss == Decimal("0")
         assert cash_row.family_percentage == (
             Decimal("500") * Decimal("100") / Decimal("1500")
         )

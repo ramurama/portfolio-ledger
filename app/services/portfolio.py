@@ -70,6 +70,32 @@ class CombinedHoldingRow:
         return sorted(self.shares_per_account.keys())
 
 
+def combined_effective_market_value(row: CombinedHoldingRow) -> Decimal:
+    """Market value used for family-level footer totals.
+
+    Live quotes use ``market_value``. Securities without a fetched price
+    and cash without a quote fall back to ``total_invested`` (cost) so
+    ``total market − total invested`` matches total unrealized G/L.
+    """
+
+    if row.market_value is not None:
+        return row.market_value
+    return row.total_invested
+
+
+def combined_family_price_totals(
+    rows: Iterable[CombinedHoldingRow],
+) -> tuple[Decimal, Decimal, Decimal]:
+    """Return ``(total_invested, total_market_value, total_unrealized_g_l)``."""
+
+    total_invested = ZERO
+    total_market = ZERO
+    for row in rows:
+        total_invested += row.total_invested
+        total_market += combined_effective_market_value(row)
+    return total_invested, total_market, total_market - total_invested
+
+
 @dataclass
 class _IsinAggregate:
     """Mutable accumulator used while folding HoldingRows."""
@@ -208,6 +234,8 @@ def merge_cash_into_combined(
             total_invested=cash_total,
             family_percentage=cash_pct,
             is_cash=True,
+            market_value=cash_total,
+            unrealized_gain_loss=ZERO,
         )
     )
 
