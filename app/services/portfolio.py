@@ -59,6 +59,10 @@ class CombinedHoldingRow:
     # Synthetic family-level cash row: `shares_per_account` holds idle cash
     # balances per account (operator-entered); see `merge_cash_into_combined`.
     is_cash: bool = False
+    # Populated when the operator opts into live quotes on the combined report.
+    current_price: Decimal | None = None
+    market_value: Decimal | None = None
+    unrealized_gain_loss: Decimal | None = None
 
     @property
     def account_names(self) -> list[str]:
@@ -186,6 +190,9 @@ def merge_cash_into_combined(
                 total_invested=row.total_invested,
                 family_percentage=pct,
                 is_cash=False,
+                current_price=row.current_price,
+                market_value=row.market_value,
+                unrealized_gain_loss=row.unrealized_gain_loss,
             )
         )
 

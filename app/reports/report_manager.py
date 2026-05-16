@@ -126,7 +126,11 @@ _COST_BASIS_SYMBOL_COL_INDEX: int = 2
 _PAGE_BUDGET_MM: float = 281.0
 
 
-def _combined_col_widths_mm(num_accounts: int) -> list[float]:
+def _combined_col_widths_mm(
+    num_accounts: int,
+    *,
+    include_market_prices: bool = False,
+) -> list[float]:
     """Build the column-width list for the combined-portfolio PDF.
 
     The column count varies with how many accounts the input contains,
@@ -134,6 +138,7 @@ def _combined_col_widths_mm(num_accounts: int) -> list[float]:
 
         ISIN (25), Symbol(wrap) (45), N x Shares-per-account (adaptive),
         Combined Shares (25), Combined Avg Price (30),
+        [optional: Current Price, Market Value, Unrealized G/L],
         Total Invested (25), Allocation (30).
 
     The fixed columns (everything except per-account shares) are sized
@@ -150,7 +155,10 @@ def _combined_col_widths_mm(num_accounts: int) -> list[float]:
     """
 
     fixed_pre = [25.0, 45.0]                  # ISIN, Symbol(wrap)
-    fixed_tail = [25.0, 30.0, 25.0, 30.0]     # Combined / Avg / Invested / Alloc
+    fixed_mid = [25.0, 30.0]                  # Combined Shares / Combined Avg Price
+    market_cols = [28.0, 30.0, 30.0] if include_market_prices else []
+    fixed_tail = [25.0, 30.0]                 # Total Invested / Allocation
+    fixed_tail_all = fixed_mid + market_cols + fixed_tail
 
     target_per_account = 28.0
     min_per_account = 18.0
@@ -158,15 +166,15 @@ def _combined_col_widths_mm(num_accounts: int) -> list[float]:
     if num_accounts <= 0:
         # Defensive: a combined report without accounts is weird but
         # shouldn't crash the renderer. Just emit the fixed columns.
-        return fixed_pre + fixed_tail
+        return fixed_pre + fixed_tail_all
 
-    available = _PAGE_BUDGET_MM - sum(fixed_pre) - sum(fixed_tail)
+    available = _PAGE_BUDGET_MM - sum(fixed_pre) - sum(fixed_tail_all)
     per_account = max(
         min_per_account,
         min(target_per_account, available / num_accounts),
     )
 
-    return fixed_pre + [per_account] * num_accounts + fixed_tail
+    return fixed_pre + [per_account] * num_accounts + fixed_tail_all
 
 
 _COMBINED_SYMBOL_COL_INDEX: int = 1
@@ -211,6 +219,8 @@ class ReportPayload:
     realized_trades: list[RealizedTrade] = field(default_factory=list)
     holdings: list[HoldingRow] = field(default_factory=list)
     combined_portfolio: list[CombinedHoldingRow] = field(default_factory=list)
+    # When True, combined report tables include live quote columns.
+    include_market_prices: bool = False
     # Per-lot rows for the IBKR-style cost-basis transfer report. Built
     # from `TaxLotResult.open_lots` via `build_cost_basis_rows`.
     cost_basis: list[CostBasisRow] = field(default_factory=list)
@@ -752,18 +762,24 @@ class ReportManager:
         formats: list[ReportFormat],
         stamp: str,
     ) -> list[Path]:
-        headers = schema.combined_headers(payload.account_names)
+        include_prices = payload.include_market_prices
+        headers = schema.combined_headers(
+            payload.account_names,
+            include_market_prices=include_prices,
+        )
         body_pdf = schema.combined_rows(
             payload.combined_portfolio,
             payload.account_names,
             payload.currency,
             money_symbols=True,
+            include_market_prices=include_prices,
         )
         body_tabular = schema.combined_rows(
             payload.combined_portfolio,
             payload.account_names,
             payload.currency,
             money_symbols=False,
+            include_market_prices=include_prices,
         )
 
         total_invested = sum(
@@ -778,12 +794,42 @@ class ReportManager:
                 total_invested, payload.currency,
             ),
         }
+        if include_prices:
+            total_market = sum(
+                (
+                    r.market_value
+                    for r in payload.combined_portfolio
+                    if not r.is_cash and r.market_value is not None
+                ),
+                start=ZERO,
+            )
+            total_unrealized = sum(
+                (
+                    r.unrealized_gain_loss
+                    for r in payload.combined_portfolio
+                    if not r.is_cash and r.unrealized_gain_loss is not None
+                ),
+                start=ZERO,
+            )
+            totals["Total Market Value"] = format_money(
+                total_market, payload.currency,
+            )
+            totals["Total Unrealized G/L"] = format_money(
+                total_unrealized, payload.currency,
+            )
 
         combined_section_notes: tuple[str, ...] = (_INVESTED_CAPITAL_PDF_NOTES[0],)
         if has_cash:
             combined_section_notes = combined_section_notes + (
                 "For the Cash row, per-account columns show current idle cash "
                 "(currency) you entered—not share quantities.",
+            )
+        if include_prices:
+            combined_section_notes = combined_section_notes + (
+                "Current prices are indicative last quotes from Yahoo Finance "
+                "(symbols resolved via OpenFIGI), shown in the report currency; "
+                "non-EUR listings are converted using Yahoo FX rates. "
+                "Not licensed market data.",
             )
 
         return self._dispatch_single_section(
@@ -798,6 +844,7 @@ class ReportManager:
             source_dates=payload.source_dates,
             pdf_col_widths_mm=_combined_col_widths_mm(
                 len(payload.account_names),
+                include_market_prices=include_prices,
             ),
             pdf_wrap_columns=(_COMBINED_SYMBOL_COL_INDEX,),
             pdf_footer_notes=None,
