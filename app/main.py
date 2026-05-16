@@ -31,6 +31,7 @@ from app.cli.prompts import (
 from app.config import (
     DEFAULT_CURRENCY,
     INPUT_DIR,
+    OPENFIGI_API_KEY,
     PORTFOLIO_LEDGER_ISIN_IGNORE_RULES,
 )
 from app.models import Transaction, TransactionType
@@ -44,6 +45,14 @@ from app.services import (
     build_current_holdings,
     ingest_input_directory,
     merge_cash_into_combined,
+)
+from app.services.market_data import (
+    apply_market_quotes_to_combined,
+    fetch_market_quotes_for_isins,
+)
+from app.services.portfolio import (
+    CombinedHoldingRow,
+    recompute_family_allocation_by_market_value,
 )
 from app.utils.decimal_utils import format_money
 from app.utils.logging import configure_logging, get_logger
@@ -121,6 +130,16 @@ ApplyIsinIgnoreOption = typer.Option(
         "holdings and combined portfolio reports (see .env)."
     ),
 )
+FetchPricesOption = typer.Option(
+    False,
+    "--fetch-prices",
+    help=(
+        "Fetch indicative current market prices for the combined report "
+        "(OpenFIGI + Yahoo Finance). With a non-interactive run "
+        "(--reports and --format both set), omit this flag to be asked "
+        "whether to fetch prices."
+    ),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +203,48 @@ def _apply_isin_ignore_if_requested(
         holdings,
         PORTFOLIO_LEDGER_ISIN_IGNORE_RULES,
     )
+
+
+def _confirm_fetch_market_prices(*, non_interactive: bool) -> bool:
+    """Ask whether to fetch live quotes for the combined report."""
+
+    if non_interactive:
+        typer.echo("")
+        typer.echo("")
+    return typer.confirm(
+        "Fetch current market prices for securities in the combined report "
+        "(OpenFIGI + Yahoo Finance; indicative only)?",
+        default=False,
+    )
+
+
+def _fetch_and_apply_market_prices(
+    combined: list[CombinedHoldingRow],
+    *,
+    target_currency: str,
+) -> tuple[list[CombinedHoldingRow], bool]:
+    """Resolve ISINs and attach quote columns; return updated rows + flag."""
+
+    isins = [r.isin for r in combined if not r.is_cash]
+    if not isins:
+        return combined, False
+
+    typer.echo("")
+    typer.echo(f"Fetching market prices for {len(isins)} ISIN(s)...")
+    quotes = fetch_market_quotes_for_isins(
+        isins,
+        target_currency=target_currency,
+        openfigi_api_key=OPENFIGI_API_KEY,
+    )
+    if not quotes:
+        typer.echo(
+            "Warning: no market prices could be fetched. "
+            "The report will show empty price columns.",
+            err=True,
+        )
+    else:
+        typer.echo(f"  Retrieved prices for {len(quotes)} of {len(isins)} ISIN(s).")
+    return apply_market_quotes_to_combined(combined, quotes), True
 
 
 def _expand_formats(formats: list[ReportFormat]) -> list[ReportFormat]:
@@ -263,6 +324,7 @@ def generate_reports(
     reports: Optional[list[ReportKind]] = ReportsOption,
     formats: Optional[list[ReportFormat]] = GenerateFormatsOption,
     cash_entries: Optional[list[str]] = CashEntriesOption,
+    fetch_prices: bool = FetchPricesOption,
     apply_isin_ignore: bool = ApplyIsinIgnoreOption,
     verbose: bool = VerboseOption,
 ) -> None:
@@ -332,13 +394,31 @@ def generate_reports(
         ingestion.accounts,
     )
 
+    reporting_currency = _detect_currency(ingestion.transactions)
+
+    include_market_prices = False
+    if ReportKind.COMBINED in report_plan:
+        want_prices = fetch_prices
+        if not want_prices:
+            want_prices = _confirm_fetch_market_prices(
+                non_interactive=non_interactive_cash,
+            )
+        if want_prices:
+            combined, include_market_prices = _fetch_and_apply_market_prices(
+                combined,
+                target_currency=reporting_currency,
+            )
+            if include_market_prices:
+                combined = recompute_family_allocation_by_market_value(combined)
+
     payload = ReportPayload(
         realized_trades=tax_lot_result.realized_trades,
         holdings=holdings,
         combined_portfolio=combined,
         account_names=ingestion.accounts,
         source_dates=ingestion.source_dates,
-        currency=_detect_currency(ingestion.transactions),
+        currency=reporting_currency,
+        include_market_prices=include_market_prices,
     )
 
     expanded_plan = {

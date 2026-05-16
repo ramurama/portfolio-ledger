@@ -29,7 +29,7 @@ from app.services.cost_basis import CostBasisRow
 from app.services.holdings import HoldingRow
 from app.services.portfolio import CombinedHoldingRow
 from app.utils.decimal_utils import format_money, format_us_decimal
-from app.utils.text import display_account_name
+from app.utils.text import display_account_name, short_account_label
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +174,11 @@ def holdings_rows(
 # ---------------------------------------------------------------------------
 # Combined family portfolio report
 # ---------------------------------------------------------------------------
-def combined_headers(account_names: list[str]) -> list[str]:
+def combined_headers(
+    account_names: list[str],
+    *,
+    include_market_prices: bool = False,
+) -> list[str]:
     """Header row depends on which accounts exist in the input."""
 
     base = ["ISIN", "Symbol"]
@@ -184,13 +188,76 @@ def combined_headers(account_names: list[str]) -> list[str]:
     tail = [
         "Combined Shares",
         "Combined Avg Price",
-        "Total Invested",
-        # Family-level allocation: this ISIN's share of the family's
-        # total invested capital. Mirrors the per-account "Allocation"
-        # column in the holdings report.
-        "Allocation",
     ]
+    if include_market_prices:
+        tail.extend(
+            [
+                "Current Price",
+                "Total Invested",
+                "Market Value",
+                "Unrealized G/L",
+            ]
+        )
+    else:
+        tail.append("Total Invested")
+    tail.append(
+        # Family-level allocation: this ISIN's share of the family's
+        # total invested capital (or market value when live prices are on).
+        "Allocation",
+    )
     return base + per_account + tail
+
+
+def combined_pdf_headers(
+    account_names: list[str],
+    *,
+    include_market_prices: bool = False,
+) -> list[str]:
+    """Short headers for the combined portfolio PDF (fits landscape A4)."""
+
+    base = ["ISIN", "Name"]
+    per_account = [
+        display_account_name(name) if name.lower() == "rakshana"
+        else short_account_label(name)
+        for name in account_names
+    ]
+    tail = ["Combined", "Avg"]
+    if include_market_prices:
+        tail.extend(["LTP", "Invested", "Mkt. Value", "P/L"])
+    else:
+        tail.append("Invested")
+    tail.append("Alloc.")
+    return base + per_account + tail
+
+
+def _combined_market_price_cells(
+    row: CombinedHoldingRow,
+    currency: str,
+    *,
+    money_symbols: bool,
+    price_quantize: str = PRICE_QUANTIZE,
+) -> list[str]:
+    sym = money_symbols
+    if row.current_price is None:
+        return ["", "", ""]
+    return [
+        format_money(
+            row.current_price, currency, price_quantize,
+            include_currency_symbol=sym,
+        ),
+        format_money(
+            row.market_value, currency,
+            include_currency_symbol=sym,
+        )
+        if row.market_value is not None
+        else "",
+        format_money(
+            row.unrealized_gain_loss, currency,
+            include_currency_symbol=sym,
+        )
+        if row.unrealized_gain_loss is not None
+        else "",
+    ]
 
 
 def combined_rows(
@@ -199,15 +266,21 @@ def combined_rows(
     currency: str,
     *,
     money_symbols: bool = True,
+    include_market_prices: bool = False,
+    compact: bool = False,
 ) -> list[list[str]]:
     """Render the combined-portfolio table body in `currency`.
 
     `account_names` enforces a consistent column order across rows -
     even when an ISIN is held by only some of the accounts the table
     stays rectangular (empty cells render as ``""``).
+
+    ``compact=True`` uses fewer decimals for PDF columns (shares/prices).
     """
 
     sym = money_symbols
+    share_q = "0.01" if compact else SHARE_QUANTIZE
+    price_q = "0.01" if compact else PRICE_QUANTIZE
     body: list[list[str]] = []
     for r in rows:
         record = [r.isin, r.symbol]
@@ -226,24 +299,40 @@ def combined_rows(
                 format_us_decimal(r.family_percentage, "0.01", thousands=False)
                 + "%"
             )
-            record.extend(
-                [
-                    "",
-                    "",
+            tail_cells: list[str] = ["", ""]
+            if include_market_prices:
+                tail_cells.extend(
+                    [
+                        "",
+                        format_money(
+                            r.total_invested, currency,
+                            include_currency_symbol=sym,
+                        ),
+                        format_money(
+                            r.market_value, currency,
+                            include_currency_symbol=sym,
+                        )
+                        if r.market_value is not None
+                        else "",
+                        "",
+                    ]
+                )
+            else:
+                tail_cells.append(
                     format_money(
                         r.total_invested, currency,
                         include_currency_symbol=sym,
                     ),
-                    family_pct_display,
-                ]
-            )
+                )
+            tail_cells.append(family_pct_display)
+            record.extend(tail_cells)
             body.append(record)
             continue
 
         for name in account_names:
             shares = r.shares_per_account.get(name)
             record.append(
-                format_us_decimal(shares, SHARE_QUANTIZE, thousands=True)
+                format_us_decimal(shares, share_q, thousands=not compact)
                 if shares is not None else ""
             )
 
@@ -253,20 +342,38 @@ def combined_rows(
             format_us_decimal(r.family_percentage, "0.01", thousands=False)
             + "%"
         )
-        record.extend(
-            [
-                format_us_decimal(r.combined_shares, SHARE_QUANTIZE, thousands=True),
-                format_money(
-                    r.combined_average_price, currency, PRICE_QUANTIZE,
-                    include_currency_symbol=sym,
-                ),
+        record.append(
+            format_us_decimal(
+                r.combined_shares, share_q, thousands=not compact,
+            ),
+        )
+        record.append(
+            format_money(
+                r.combined_average_price, currency, price_q,
+                include_currency_symbol=sym,
+            ),
+        )
+        if include_market_prices:
+            ltp, mkt, pl = _combined_market_price_cells(
+                r, currency, money_symbols=sym, price_quantize=price_q,
+            )
+            record.append(ltp)
+            record.append(
                 format_money(
                     r.total_invested, currency,
                     include_currency_symbol=sym,
                 ),
-                family_pct_display,
-            ]
-        )
+            )
+            record.append(mkt)
+            record.append(pl)
+        else:
+            record.append(
+                format_money(
+                    r.total_invested, currency,
+                    include_currency_symbol=sym,
+                ),
+            )
+        record.append(family_pct_display)
         body.append(record)
     return body
 

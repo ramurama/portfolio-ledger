@@ -19,6 +19,9 @@ class registered in `app/parsers/registry.py`.
 - Aggregates current holdings per account and across the family.
 - Optional **cash** line in the combined report from operator-entered
   current idle cash per portfolio folder.
+- Optional **live market prices** on the combined report only (OpenFIGI
+  + Yahoo Finance): LTP, market value, P/L, and allocation % by market
+  value — see [Combined report — live market prices](#combined-report--live-market-prices).
 - Combined PDF/Excel/CSV include an **annual summary** of pre-tax realized
   gains by account, family totals, and approximate **Family CGT Paid** per year.
 - Renders 3 standard reports (Tax Lots realized gains, current
@@ -48,7 +51,8 @@ app/
   main.py                Typer CLI entrypoint (python -m app.main).
   models/                Pydantic Transaction model + tax-lot dataclasses.
   parsers/               Broker-specific CSV parsers (+ registry).
-  services/              Pure business logic: ingestion, tax lots, holdings.
+  services/              Pure business logic: ingestion, tax lots, holdings,
+                         portfolio aggregation, market_data (live quotes).
   reports/               CSV / Excel / PDF renderers + orchestrator.
   cli/                   Interactive prompts for report selection.
   utils/                 Decimal / date / logging helpers.
@@ -91,7 +95,7 @@ Run **`make help`** to print this list from your machine.
 | `make help` | Show available targets and what they invoke. |
 | `make process` | Parse inputs, run FIFO tax lots, print the processing summary. |
 | `make reports` | Start `generate-reports` in **interactive** mode (choose reports and formats in the terminal). |
-| `make full-report` | Non-interactive **combined** report only: **PDF**, with **`--apply-isin-ignore`**. The recipe does not pass `--cash`, so the CLI asks whether to add idle cash, then prompts once per account folder. For a fully non-interactive run, use **`make run`** with explicit **`--cash`** flags instead. |
+| `make full-report` | Non-interactive **combined** report only: **PDF**, with **`--apply-isin-ignore`**. The recipe does not pass `--cash` or `--fetch-prices`, so the CLI asks whether to add idle cash and whether to fetch live prices. For a fully non-interactive run, use **`make run`** with explicit flags instead. |
 | `make cost-basis` | Run **`generate-cost-basis`** (per-lot cost basis transfer report). |
 | `make install-editable` | Run **`pip install -e .`** using `./venv/bin/pip`, registering the **`pl`** and **`portfolio-ledger`** console scripts into that venv. |
 | `make run ARGS='…'` | Forward **any** subcommand and flags: the value of **`ARGS`** is appended after `python -m app.main`. Use **one quoted string** so the shell preserves spaces and flags. |
@@ -114,8 +118,8 @@ make install-editable
 # Same as: python -m app.main process --account ramu --verbose
 make run ARGS='process --account ramu --verbose'
 
-# Fully non-interactive combined PDF with explicit cash (no prompts)
-make run ARGS='generate-reports --reports combined --format pdf --apply-isin-ignore --cash ramu:26490 --cash rakshana:7192'
+# Fully non-interactive combined PDF with explicit cash and live prices
+make run ARGS='generate-reports --reports combined --format pdf --apply-isin-ignore --fetch-prices --cash ramu:26490 --cash rakshana:7192'
 ```
 
 **Note:** `make` does not pass extra words on the command line to the recipe. For anything beyond the fixed targets, use **`make run ARGS='…'`** (or call `pl` / `python -m app.main` directly).
@@ -136,6 +140,7 @@ activating the venv, `python -m app.main` works the same way). If you ran
 Shared options (where supported): `--account` / `-a` (single folder), `--input-dir`,
 `--verbose` / `-v`. For `generate-reports`, add `--reports` / `-r` and `--format` / `-f`
 for non-interactive runs; repeatable `--cash folder:amount` for combined idle cash;
+`--fetch-prices` to fetch live quotes on the combined report without a prompt;
 `--apply-isin-ignore` to apply `PORTFOLIO_LEDGER_IGNORE_ISINS` from `.env`.
 
 All examples in one place:
@@ -157,7 +162,7 @@ python3 -m app.main generate-reports \
   --format all
 
 python3 -m app.main generate-reports --reports combined --format pdf \
-  --cash ramu:12000 --cash rakshana:8000
+  --cash ramu:12000 --cash rakshana:8000 --fetch-prices
 
 python3 -m app.main generate-reports --account ramu
 
@@ -184,11 +189,113 @@ python3 -m pytest tests/ -q
 
 **Combined report — idle cash.** Interactive runs can ask whether to add a **Cash**
 row and prompt once per folder under `input/`. Amounts drive the Cash row and family
-**Allocation** (no tax or cost-basis adjustment). When you pass both `--reports` and
-`--format` (non-interactive) **and** include the combined report: if you pass one or
-more `--cash folder:amount` flags, those values are used; if you omit `--cash`
-entirely, you are asked **whether** to add cash; if you choose yes, you are **prompted
-once per folder**. Use `--cash account:0` when you want no idle cash without any prompts.
+**Allocation** when live prices are off (no tax or cost-basis adjustment). When you
+pass both `--reports` and `--format` (non-interactive) **and** include the combined
+report: if you pass one or more `--cash folder:amount` flags, those values are used; if
+you omit `--cash` entirely, you are asked **whether** to add cash; if you choose yes,
+you are **prompted once per folder**. Use `--cash account:0` when you want no idle
+cash without any prompts. When live prices are enabled, cash is included in **Total
+Market Value** and in **Alloc.** (at face value).
+
+### Combined report — live market prices
+
+Only the **combined family portfolio** report can show indicative last prices. Tax
+Lots and Current Holdings always use cost basis from your CSV exports.
+
+#### Enabling prices
+
+| Mode | Behaviour |
+| --- | --- |
+| Interactive | After report/format selection, if the combined report is included, the CLI asks: *Fetch current market prices for securities in the combined report (OpenFIGI + Yahoo Finance; indicative only)?* |
+| Non-interactive | Pass **`--fetch-prices`** together with `--reports` and `--format` to skip the prompt. Omit it to be asked (same pattern as `--cash`). |
+
+Example:
+
+```bash
+python3 -m app.main generate-reports \
+  --reports combined --format pdf \
+  --fetch-prices --apply-isin-ignore
+```
+
+Requires outbound HTTPS (OpenFIGI and Yahoo Finance). Dependencies include
+**`certifi`** for TLS certificate verification (notably on macOS Python.org
+installs).
+
+#### Extra columns (PDF short headers)
+
+When prices are on, the combined table adds (after **Avg**):
+
+**LTP** → **Invested** → **Mkt. Value** → **P/L** → **Alloc.**
+
+CSV/Excel use the long names (`Current Price`, `Total Invested`, `Market Value`,
+`Unrealized G/L`, `Allocation`). Per-row **Invested** is always your book cost;
+**LTP** / **Mkt. Value** / **P/L** are blank for rows where no quote was returned.
+
+Footer totals when prices are enabled:
+
+- **Total Market Value** — sum of row market values (live quote where available,
+  otherwise cost for that ISIN) plus cash at face value.
+- **Total Unrealized G/L** — total market value minus **Total Invested (Family)** so
+  the three figures reconcile.
+
+**Alloc.** is recomputed from each row’s share of **family market value** (not
+invested capital) when prices are enabled. Holdings without a live quote count at
+**invested** amount in that total.
+
+#### How current prices are resolved
+
+Implementation lives in **`app/services/market_data.py`** (stdlib `urllib` only; no
+extra HTTP client).
+
+```mermaid
+flowchart LR
+  ISIN[ISIN per combined row]
+  OF[OpenFIGI mapping API]
+  YS[Yahoo search fallback]
+  SYM[Yahoo ticker symbol]
+  YC[Yahoo chart API]
+  FX[Yahoo FX pairs]
+  EUR[Report currency e.g. EUR]
+  ISIN --> OF
+  OF -->|no match| YS
+  OF --> SYM
+  YS --> SYM
+  SYM --> YC
+  YC --> FX
+  FX --> EUR
+```
+
+1. **ISIN → symbol (OpenFIGI)**  
+   POST `https://api.openfigi.com/v3/mapping` with `{"idType":"ISIN","idValue":"…"}`
+   in batches of 10. If several listings exist, a **European venue is preferred**
+   (e.g. `SAP.DE` on Xetra over `SAP` in USD). Optional **`OPENFIGI_API_KEY`** in
+   `.env` raises rate limits (see [Environment overrides](#environment-overrides)).
+
+2. **Fallback (Yahoo search)**  
+   If OpenFIGI returns nothing, query Yahoo’s search endpoint with the ISIN and take
+   the first symbol.
+
+3. **Last price (Yahoo chart)**  
+   `https://query1.finance.yahoo.com/v8/finance/chart/{symbol}` — read
+   `meta.regularMarketPrice` and `meta.currency`.
+
+4. **Minor units**  
+   LSE listings often quote in **GBp** (pence). The engine converts `GBp` / `GBX` to
+   GBP (÷ 100) before any FX step so prices are not overstated by 100×.
+
+5. **FX into report currency**  
+   Your reporting currency comes from the dominant currency in the ingested CSVs
+   (typically **EUR** for Scalable Capital DE). If the quote currency differs, the
+   tool converts using Yahoo FX pairs (`USDEUR=X`, `EURUSD=X`, etc.).
+
+6. **Attach to combined rows**  
+   `apply_market_quotes_to_combined()` sets `current_price`, `market_value`, and
+   `unrealized_gain_loss` per ISIN. Then
+   `recompute_family_allocation_by_market_value()` refreshes **Alloc.**
+
+This is **indicative** data for personal portfolio views — not licensed exchange feed.
+Yahoo symbols or FX can be wrong for thinly traded or dual-listed names; always spot-
+check important positions.
 
 **ISIN ignore list.** Set `PORTFOLIO_LEDGER_IGNORE_ISINS` in `.env` (comma-separated
 `folder:ISIN`, folder name case-insensitive). Exclusions apply only when you pass
@@ -295,6 +402,7 @@ combined reporting — useful when running inside Docker:
 | `PORTFOLIO_LEDGER_OUTPUT_DIR`                 | Override the default `./output/`. |
 | `PORTFOLIO_LEDGER_TRANSACTION_TYPES`          | Comma-separated list of raw broker `type` values to admit (default includes `Buy,Sell,Savings plan,Distribution,Taxes,Tax,Security transfer,Corporate action`). Anything not listed is dropped at parse time. |
 | `PORTFOLIO_LEDGER_IGNORE_ISINS`                 | Optional. Comma-separated `folder:ISIN` pairs (e.g. `rakshana:DE000EWG2LD7`). Used only with `--apply-isin-ignore`; see [CLI commands](#cli-commands). |
+| `OPENFIGI_API_KEY`                              | Optional. API key for [OpenFIGI](https://www.openfigi.com/api) when fetching live prices on the combined report; improves rate limits. Yahoo Finance needs no key. |
 
 A starter `.env.template` is committed at the repo root - copy it to
 `.env` and edit if you need to override the defaults.

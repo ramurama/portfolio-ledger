@@ -46,7 +46,10 @@ from app.reports.excel_report import ExcelSection, write_excel
 from app.reports.pdf_report import PdfSection, write_pdf
 from app.services.cost_basis import CostBasisRow
 from app.services.holdings import HoldingRow
-from app.services.portfolio import CombinedHoldingRow
+from app.services.portfolio import (
+    CombinedHoldingRow,
+    combined_family_price_totals,
+)
 from app.utils.decimal_utils import ZERO, format_money
 from app.utils.logging import get_logger
 from app.utils.text import display_account_name
@@ -126,47 +129,62 @@ _COST_BASIS_SYMBOL_COL_INDEX: int = 2
 _PAGE_BUDGET_MM: float = 281.0
 
 
-def _combined_col_widths_mm(num_accounts: int) -> list[float]:
-    """Build the column-width list for the combined-portfolio PDF.
+def _distribute_col_widths_mm(
+  specs: list[tuple[float, float]],
+) -> list[float]:
+    """Expand column mins across ``_PAGE_BUDGET_MM`` using relative weights.
 
-    The column count varies with how many accounts the input contains,
-    so we compute the layout dynamically. Layout (left to right):
-
-        ISIN (25), Symbol(wrap) (45), N x Shares-per-account (adaptive),
-        Combined Shares (25), Combined Avg Price (30),
-        Total Invested (25), Allocation (30).
-
-    The fixed columns (everything except per-account shares) are sized
-    generously enough that headers like "Combined Avg Price" or
-    "Allocation" fit comfortably on a single line. The
-    per-account column starts at a generous 28mm (enough to fit
-    "Shares (Rakshana)" without wrapping) and shrinks as more accounts
-    appear, so the table never overflows the page width.
-
-    Even when the per-account column shrinks below the ideal, header
-    wrapping kicks in (see `_wrap_headers` in pdf_report) and the
-    layout still reads cleanly - just on two header lines instead of
-    one.
+    Each spec is ``(minimum_mm, weight)``. When mins exceed the page
+    budget, every column is scaled down proportionally.
     """
 
-    fixed_pre = [25.0, 45.0]                  # ISIN, Symbol(wrap)
-    fixed_tail = [25.0, 30.0, 25.0, 30.0]     # Combined / Avg / Invested / Alloc
+    if not specs:
+        return []
 
-    target_per_account = 28.0
-    min_per_account = 18.0
+    mins = [s[0] for s in specs]
+    weights = [s[1] for s in specs]
+    total_min = sum(mins)
+    budget = _PAGE_BUDGET_MM
 
-    if num_accounts <= 0:
-        # Defensive: a combined report without accounts is weird but
-        # shouldn't crash the renderer. Just emit the fixed columns.
-        return fixed_pre + fixed_tail
+    if total_min >= budget:
+        scale = budget / total_min
+        return [m * scale for m in mins]
 
-    available = _PAGE_BUDGET_MM - sum(fixed_pre) - sum(fixed_tail)
-    per_account = max(
-        min_per_account,
-        min(target_per_account, available / num_accounts),
-    )
+    extra = budget - total_min
+    weight_sum = sum(weights)
+    return [
+        min_w + extra * (w / weight_sum)
+        for min_w, w in zip(mins, weights)
+    ]
 
-    return fixed_pre + [per_account] * num_accounts + fixed_tail
+
+def _combined_col_widths_mm(
+    num_accounts: int,
+    *,
+    include_market_prices: bool = False,
+) -> list[float]:
+    """Build column widths that use the full printable landscape width."""
+
+    specs: list[tuple[float, float]] = [
+        (26.0, 1.0),   # ISIN — single line for 12-char codes
+        (30.0, 1.4),   # Symbol (wrap)
+    ]
+    specs.extend((16.0, 1.0) for _ in range(max(num_accounts, 0)))
+    specs.append((16.0, 0.9))   # Combined shares
+    specs.append((18.0, 1.1))   # Avg
+    if include_market_prices:
+        specs.extend(
+            [
+                (18.0, 1.1),   # LTP
+                (20.0, 1.2),   # Invested
+                (20.0, 1.2),   # Mkt. Value
+                (18.0, 1.0),   # P/L
+            ]
+        )
+    else:
+        specs.append((20.0, 1.2))   # Invested
+    specs.append((12.0, 0.7))   # Alloc.
+    return _distribute_col_widths_mm(specs)
 
 
 _COMBINED_SYMBOL_COL_INDEX: int = 1
@@ -211,6 +229,8 @@ class ReportPayload:
     realized_trades: list[RealizedTrade] = field(default_factory=list)
     holdings: list[HoldingRow] = field(default_factory=list)
     combined_portfolio: list[CombinedHoldingRow] = field(default_factory=list)
+    # When True, combined report tables include live quote columns.
+    include_market_prices: bool = False
     # Per-lot rows for the IBKR-style cost-basis transfer report. Built
     # from `TaxLotResult.open_lots` via `build_cost_basis_rows`.
     cost_basis: list[CostBasisRow] = field(default_factory=list)
@@ -752,23 +772,33 @@ class ReportManager:
         formats: list[ReportFormat],
         stamp: str,
     ) -> list[Path]:
-        headers = schema.combined_headers(payload.account_names)
+        include_prices = payload.include_market_prices
+        headers = schema.combined_headers(
+            payload.account_names,
+            include_market_prices=include_prices,
+        )
+        pdf_headers = schema.combined_pdf_headers(
+            payload.account_names,
+            include_market_prices=include_prices,
+        )
         body_pdf = schema.combined_rows(
             payload.combined_portfolio,
             payload.account_names,
             payload.currency,
             money_symbols=True,
+            include_market_prices=include_prices,
+            compact=True,
         )
         body_tabular = schema.combined_rows(
             payload.combined_portfolio,
             payload.account_names,
             payload.currency,
             money_symbols=False,
+            include_market_prices=include_prices,
         )
 
-        total_invested = sum(
-            (r.total_invested for r in payload.combined_portfolio),
-            start=ZERO,
+        total_invested, total_market, total_unrealized = (
+            combined_family_price_totals(payload.combined_portfolio)
         )
         has_cash = any(r.is_cash for r in payload.combined_portfolio)
         n_isins = sum(1 for r in payload.combined_portfolio if not r.is_cash)
@@ -778,6 +808,19 @@ class ReportManager:
                 total_invested, payload.currency,
             ),
         }
+        if include_prices:
+            totals["Total Market Value"] = format_money(
+                total_market, payload.currency,
+            )
+            totals["Total Unrealized G/L"] = format_money(
+                total_unrealized, payload.currency,
+            )
+
+        n_without_quote = sum(
+            1
+            for r in payload.combined_portfolio
+            if not r.is_cash and r.market_value is None
+        ) if include_prices else 0
 
         combined_section_notes: tuple[str, ...] = (_INVESTED_CAPITAL_PDF_NOTES[0],)
         if has_cash:
@@ -785,6 +828,20 @@ class ReportManager:
                 "For the Cash row, per-account columns show current idle cash "
                 "(currency) you entered—not share quantities.",
             )
+        if include_prices:
+            combined_section_notes = combined_section_notes + (
+                "Current prices are indicative last quotes from Yahoo Finance "
+                "(symbols resolved via OpenFIGI), shown in the report currency; "
+                "non-EUR listings are converted using Yahoo FX rates. "
+                "Allocation % is based on market value (cost for holdings "
+                "without a live quote). Not licensed market data.",
+            )
+            if n_without_quote:
+                combined_section_notes = combined_section_notes + (
+                    f"Footer market value includes {n_without_quote} "
+                    "holding(s) without a live quote at cost (invested amount); "
+                    "total unrealized G/L is market value minus total invested.",
+                )
 
         return self._dispatch_single_section(
             base_filename=f"combined_portfolio_{stamp}",
@@ -796,8 +853,10 @@ class ReportManager:
             formats=formats,
             tabular_body=body_tabular,
             source_dates=payload.source_dates,
+            pdf_headers=pdf_headers,
             pdf_col_widths_mm=_combined_col_widths_mm(
                 len(payload.account_names),
+                include_market_prices=include_prices,
             ),
             pdf_wrap_columns=(_COMBINED_SYMBOL_COL_INDEX,),
             pdf_footer_notes=None,
@@ -985,6 +1044,7 @@ class ReportManager:
         formats: list[ReportFormat],
         tabular_body: Optional[list[list[str]]] = None,
         source_dates: Optional[dict[str, datetime]] = None,
+        pdf_headers: Optional[list[str]] = None,
         pdf_col_widths_mm: Optional[list[float]] = None,
         pdf_wrap_columns: tuple[int, ...] = (),
         pdf_footer_notes: Optional[Sequence[str]] = None,
@@ -1019,7 +1079,7 @@ class ReportManager:
                 self.pdf_dir / f"{base_filename}.pdf",
                 title=title,
                 sections=[PdfSection(
-                    headers=headers,
+                    headers=pdf_headers if pdf_headers is not None else headers,
                     body=body,
                     totals=totals,
                     col_widths_mm=pdf_col_widths_mm,

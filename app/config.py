@@ -168,3 +168,7 @@ PORTFOLIO_LEDGER_ISIN_IGNORE_RULES: Final[dict[str, frozenset[str]]] = (
         os.environ.get("PORTFOLIO_LEDGER_IGNORE_ISINS"),
     )
 )
+
+# Optional OpenFIGI key for ISIN → ticker resolution when fetching live
+# quotes on the combined portfolio report (higher rate limits).
+OPENFIGI_API_KEY: Final[Optional[str]] = os.environ.get("OPENFIGI_API_KEY") or None

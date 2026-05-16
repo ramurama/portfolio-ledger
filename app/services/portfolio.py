@@ -59,11 +59,91 @@ class CombinedHoldingRow:
     # Synthetic family-level cash row: `shares_per_account` holds idle cash
     # balances per account (operator-entered); see `merge_cash_into_combined`.
     is_cash: bool = False
+    # Populated when the operator opts into live quotes on the combined report.
+    current_price: Decimal | None = None
+    market_value: Decimal | None = None
+    unrealized_gain_loss: Decimal | None = None
 
     @property
     def account_names(self) -> list[str]:
         """Sorted account names that hold this ISIN."""
         return sorted(self.shares_per_account.keys())
+
+
+def combined_effective_market_value(row: CombinedHoldingRow) -> Decimal:
+    """Market value used for family-level footer totals.
+
+    Live quotes use ``market_value``. Securities without a fetched price
+    and cash without a quote fall back to ``total_invested`` (cost) so
+    ``total market − total invested`` matches total unrealized G/L.
+    """
+
+    if row.market_value is not None:
+        return row.market_value
+    return row.total_invested
+
+
+def combined_family_price_totals(
+    rows: Iterable[CombinedHoldingRow],
+) -> tuple[Decimal, Decimal, Decimal]:
+    """Return ``(total_invested, total_market_value, total_unrealized_g_l)``."""
+
+    total_invested = ZERO
+    total_market = ZERO
+    for row in rows:
+        total_invested += row.total_invested
+        total_market += combined_effective_market_value(row)
+    return total_invested, total_market, total_market - total_invested
+
+
+def recompute_family_allocation_by_market_value(
+    rows: list[CombinedHoldingRow],
+) -> list[CombinedHoldingRow]:
+    """Set each row's ``family_percentage`` from its share of family market value.
+
+    Uses :func:`combined_effective_market_value` (live quote, else cost;
+    cash at face value). Call after market quotes are applied on the
+    combined report.
+    """
+
+    grand_total = sum(
+        (combined_effective_market_value(r) for r in rows),
+        start=ZERO,
+    )
+    if grand_total <= ZERO:
+        logger.warning(
+            "Cannot recompute allocation by market value: "
+            "family market total is not positive (%s).",
+            grand_total,
+        )
+        return rows
+
+    rescored: list[CombinedHoldingRow] = []
+    for row in rows:
+        slice_mv = combined_effective_market_value(row)
+        rescored.append(
+            CombinedHoldingRow(
+                isin=row.isin,
+                symbol=row.symbol,
+                shares_per_account=dict(row.shares_per_account),
+                combined_shares=row.combined_shares,
+                combined_average_price=row.combined_average_price,
+                total_invested=row.total_invested,
+                family_percentage=safe_divide(slice_mv * _HUNDRED, grand_total),
+                is_cash=row.is_cash,
+                current_price=row.current_price,
+                market_value=row.market_value,
+                unrealized_gain_loss=row.unrealized_gain_loss,
+            )
+        )
+
+    rescored.sort(
+        key=lambda r: (
+            (1, "") if r.is_cash else (0, r.symbol.lower()),
+            r.isin,
+        )
+    )
+    return rescored
 
 
 @dataclass
@@ -186,6 +266,9 @@ def merge_cash_into_combined(
                 total_invested=row.total_invested,
                 family_percentage=pct,
                 is_cash=False,
+                current_price=row.current_price,
+                market_value=row.market_value,
+                unrealized_gain_loss=row.unrealized_gain_loss,
             )
         )
 
@@ -201,6 +284,8 @@ def merge_cash_into_combined(
             total_invested=cash_total,
             family_percentage=cash_pct,
             is_cash=True,
+            market_value=cash_total,
+            unrealized_gain_loss=ZERO,
         )
     )
 
