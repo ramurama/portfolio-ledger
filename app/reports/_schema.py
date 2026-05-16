@@ -193,18 +193,17 @@ def combined_headers(
         tail.extend(
             [
                 "Current Price",
+                "Total Invested",
                 "Market Value",
                 "Unrealized G/L",
             ]
         )
-    tail.extend(
-        [
-            "Total Invested",
-            # Family-level allocation: this ISIN's share of the family's
-            # total invested capital. Mirrors the per-account "Allocation"
-            # column in the holdings report.
-            "Allocation",
-        ]
+    else:
+        tail.append("Total Invested")
+    tail.append(
+        # Family-level allocation: this ISIN's share of the family's
+        # total invested capital (or market value when live prices are on).
+        "Allocation",
     )
     return base + per_account + tail
 
@@ -224,8 +223,10 @@ def combined_pdf_headers(
     ]
     tail = ["Combined", "Avg"]
     if include_market_prices:
-        tail.extend(["LTP", "Mkt. Value", "P/L"])
-    tail.extend(["Invested", "Alloc."])
+        tail.extend(["LTP", "Invested", "Mkt. Value", "P/L"])
+    else:
+        tail.append("Invested")
+    tail.append("Alloc.")
     return base + per_account + tail
 
 
@@ -304,6 +305,10 @@ def combined_rows(
                     [
                         "",
                         format_money(
+                            r.total_invested, currency,
+                            include_currency_symbol=sym,
+                        ),
+                        format_money(
                             r.market_value, currency,
                             include_currency_symbol=sym,
                         )
@@ -312,15 +317,14 @@ def combined_rows(
                         "",
                     ]
                 )
-            tail_cells.extend(
-                [
+            else:
+                tail_cells.append(
                     format_money(
                         r.total_invested, currency,
                         include_currency_symbol=sym,
                     ),
-                    family_pct_display,
-                ]
-            )
+                )
+            tail_cells.append(family_pct_display)
             record.extend(tail_cells)
             body.append(record)
             continue
@@ -350,17 +354,25 @@ def combined_rows(
             ),
         )
         if include_market_prices:
-            record.extend(
-                _combined_market_price_cells(
-                    r, currency, money_symbols=sym, price_quantize=price_q,
+            ltp, mkt, pl = _combined_market_price_cells(
+                r, currency, money_symbols=sym, price_quantize=price_q,
+            )
+            record.append(ltp)
+            record.append(
+                format_money(
+                    r.total_invested, currency,
+                    include_currency_symbol=sym,
                 ),
             )
-        record.append(
-            format_money(
-                r.total_invested, currency,
-                include_currency_symbol=sym,
-            ),
-        )
+            record.append(mkt)
+            record.append(pl)
+        else:
+            record.append(
+                format_money(
+                    r.total_invested, currency,
+                    include_currency_symbol=sym,
+                ),
+            )
         record.append(family_pct_display)
         body.append(record)
     return body

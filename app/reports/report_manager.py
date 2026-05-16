@@ -175,17 +175,15 @@ def _combined_col_widths_mm(
     if include_market_prices:
         specs.extend(
             [
-                (18.0, 1.1),   # Last
-                (20.0, 1.2),   # Mkt.
-                (18.0, 1.0),   # G/L
+                (18.0, 1.1),   # LTP
+                (20.0, 1.2),   # Invested
+                (20.0, 1.2),   # Mkt. Value
+                (18.0, 1.0),   # P/L
             ]
         )
-    specs.extend(
-        [
-            (20.0, 1.2),   # Invest.
-            (12.0, 0.7),   # Alloc%
-        ]
-    )
+    else:
+        specs.append((20.0, 1.2))   # Invested
+    specs.append((12.0, 0.7))   # Alloc.
     return _distribute_col_widths_mm(specs)
 
 

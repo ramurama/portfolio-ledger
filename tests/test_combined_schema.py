@@ -36,6 +36,8 @@ def test_combined_headers_and_rows_include_market_columns() -> None:
     )
     assert len(body) == 1
     assert len(body[0]) == len(headers)
-    # Last columns: ... avg price, current, market value, unrealized, invested, %
-    assert body[0][-2] == "50.00"
+    invested_idx = headers.index("Total Invested")
+    mkt_idx = headers.index("Market Value")
+    assert invested_idx == mkt_idx - 1
+    assert body[0][invested_idx] == "50.00"
     assert body[0][-1] == "100.00%"

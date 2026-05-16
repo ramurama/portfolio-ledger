@@ -30,8 +30,8 @@ def test_combined_pdf_headers_are_short() -> None:
         "Combined",
         "Avg",
         "LTP",
+        "Invested",
         "Mkt. Value",
         "P/L",
-        "Invested",
         "Alloc.",
     ]
