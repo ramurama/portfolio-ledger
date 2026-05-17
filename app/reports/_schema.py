@@ -381,10 +381,13 @@ def combined_rows(
 # ---------------------------------------------------------------------------
 # Cost-basis transfer report (one row per still-open tax lot)
 # ---------------------------------------------------------------------------
+COST_BASIS_EXCHANGE: str = "GETTEX"
+
 COST_BASIS_HEADERS: list[str] = [
     "Account",
     "ISIN",
     "Symbol",
+    "Exchange",
     "Acquisition Date",
     "Quantity",
     # The cost-basis report is the only place we explicitly call out a
@@ -417,6 +420,7 @@ def cost_basis_rows(
                 display_account_name(r.account_name),
                 r.isin,
                 r.symbol,
+                COST_BASIS_EXCHANGE,
                 r.acquisition_date.strftime("%Y-%m-%d"),
                 format_us_decimal(r.quantity, SHARE_QUANTIZE, thousands=True),
                 format_money(

@@ -7,6 +7,10 @@ from decimal import Decimal
 
 from app.config import parse_portfolio_isin_ignore_rules
 from app.models import OpenLot
+from app.services.cost_basis import (
+    apply_cost_basis_isin_exclusions,
+    build_cost_basis_rows,
+)
 from app.services.holdings import (
     apply_portfolio_isin_exclusions,
     build_current_holdings,
@@ -91,3 +95,25 @@ class TestApplyPortfolioIsinExclusions:
         by_acc = {(r.account_name, r.isin): r for r in out}
         assert ("rakshana", "ISIN_A") not in by_acc
         assert by_acc[("ramu", "ISIN_A")].portfolio_percentage == Decimal("100")
+
+
+class TestApplyCostBasisIsinExclusions:
+    def test_drops_matching_lots_for_named_account(self) -> None:
+        rows = build_cost_basis_rows([
+            _lot("rakshana", "DROP", "X", "1", "10"),
+            _lot("rakshana", "KEEP", "Y", "1", "20"),
+            _lot("ramu", "DROP", "X", "1", "30"),
+        ])
+        rules = {
+            "rakshana": frozenset({"DROP"}),
+            "ramu": frozenset({"DROP"}),
+        }
+        out = apply_cost_basis_isin_exclusions(rows, rules)
+        assert len(out) == 1
+        assert out[0].account_name == "rakshana"
+        assert out[0].isin == "KEEP"
+
+    def test_no_rules_returns_equivalent_list(self) -> None:
+        rows = build_cost_basis_rows([_lot("ramu", "ISIN_A", "A", "1", "100")])
+        out = apply_cost_basis_isin_exclusions(rows, {})
+        assert out == rows

@@ -7,7 +7,11 @@ trivially unit-testable and means the same logic can be reused by a
 future API layer or background worker.
 """
 
-from app.services.cost_basis import CostBasisRow, build_cost_basis_rows
+from app.services.cost_basis import (
+    CostBasisRow,
+    apply_cost_basis_isin_exclusions,
+    build_cost_basis_rows,
+)
 from app.services.holdings import (
     HoldingRow,
     apply_portfolio_isin_exclusions,
@@ -31,6 +35,7 @@ __all__ = [
     "TaxLotResult",
     "build_combined_portfolio",
     "merge_cash_into_combined",
+    "apply_cost_basis_isin_exclusions",
     "build_cost_basis_rows",
     "build_current_holdings",
     "ingest_input_directory",

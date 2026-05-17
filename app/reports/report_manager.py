@@ -121,7 +121,7 @@ _HOLDINGS_SYMBOL_COL_INDEX: int = 2
 # Cost basis transfer: Account, ISIN, Symbol(wrap), AcquisitionDate,
 #                      Quantity, CostPerShare, CostBasis
 # Total = 252mm, comfortably within the 281mm landscape A4 budget.
-_COST_BASIS_COL_WIDTHS_MM: list[float] = [22, 28, 70, 28, 32, 38, 34]
+_COST_BASIS_COL_WIDTHS_MM: list[float] = [22, 28, 58, 22, 28, 32, 38, 34]
 _COST_BASIS_SYMBOL_COL_INDEX: int = 2
 
 

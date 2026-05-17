@@ -313,8 +313,14 @@ sells stay tax-matched correctly. The averaged "Current Holdings"
 report is not enough - you need one row per still-open tax lot.
 Use `generate-cost-basis` (see examples above).
 
+**ISIN exclusions.** Set `COSTBASIS_IGNORE_ISINS` in `.env` (same
+`folder:ISIN` format as `PORTFOLIO_LEDGER_IGNORE_ISINS`). Matching open
+lots are **always** omitted from the cost-basis report for that account
+folder — no CLI flag required. Tax-lot and other reports are unchanged.
+
 Output filenames: `cost_basis_transfer_{stamp}.{csv,xlsx,pdf}`. Each
-row carries `Account`, `ISIN`, `Symbol`, `Acquisition Date`,
+row carries `Account`, `ISIN`, `Symbol`, `Exchange` (always `GETTEX` for
+Scalable Capital → IBKR transfers), `Acquisition Date`,
 `Quantity`, `Cost per Share`, and `Cost Basis`. Enter
 `Quantity` and `Cost per Share` for each row on the receiving broker's
 intake form; the `Cost Basis` column is shown only as a sanity check.
@@ -402,6 +408,7 @@ combined reporting — useful when running inside Docker:
 | `PORTFOLIO_LEDGER_OUTPUT_DIR`                 | Override the default `./output/`. |
 | `PORTFOLIO_LEDGER_TRANSACTION_TYPES`          | Comma-separated list of raw broker `type` values to admit (default includes `Buy,Sell,Savings plan,Distribution,Taxes,Tax,Security transfer,Corporate action`). Anything not listed is dropped at parse time. |
 | `PORTFOLIO_LEDGER_IGNORE_ISINS`                 | Optional. Comma-separated `folder:ISIN` pairs (e.g. `rakshana:DE000EWG2LD7`). Used only with `--apply-isin-ignore`; see [CLI commands](#cli-commands). |
+| `COSTBASIS_IGNORE_ISINS`                        | Optional. Same `folder:ISIN` format. Always applied on `generate-cost-basis`; see [Cost Basis Transfer report](#cost-basis-transfer-report-broker-to-broker-transfers). |
 | `OPENFIGI_API_KEY`                              | Optional. API key for [OpenFIGI](https://www.openfigi.com/api) when fetching live prices on the combined report; improves rate limits. Yahoo Finance needs no key. |
 
 A starter `.env.template` is committed at the repo root - copy it to

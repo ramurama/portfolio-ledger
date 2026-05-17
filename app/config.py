@@ -69,7 +69,10 @@ def _resolve_csv_list(env_var: str, default: tuple[str, ...]) -> tuple[str, ...]
 
 
 def parse_portfolio_isin_ignore_rules(raw: Optional[str]) -> dict[str, frozenset[str]]:
-    """Parse ``PORTFOLIO_LEDGER_IGNORE_ISINS``-style text into a lookup map.
+    """Parse ``folder:ISIN`` ignore lists into a lookup map.
+
+    Used for ``PORTFOLIO_LEDGER_IGNORE_ISINS`` (with ``--apply-isin-ignore``)
+    and ``COSTBASIS_IGNORE_ISINS`` (always on cost-basis reports).
 
     Each comma-separated entry must be ``<account_folder>:<ISIN>`` where
     ``account_folder`` matches an ``input/<name>/`` directory (compared
@@ -166,6 +169,13 @@ SUPPORTED_TRANSACTION_TYPES: Final[tuple[str, ...]] = _resolve_csv_list(
 PORTFOLIO_LEDGER_ISIN_IGNORE_RULES: Final[dict[str, frozenset[str]]] = (
     parse_portfolio_isin_ignore_rules(
         os.environ.get("PORTFOLIO_LEDGER_IGNORE_ISINS"),
+    )
+)
+
+# Per-account ISINs omitted from the cost-basis transfer report (always applied).
+COST_BASIS_ISIN_IGNORE_RULES: Final[dict[str, frozenset[str]]] = (
+    parse_portfolio_isin_ignore_rules(
+        os.environ.get("COSTBASIS_IGNORE_ISINS"),
     )
 )
 

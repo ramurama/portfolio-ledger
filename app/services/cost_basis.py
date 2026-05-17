@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Iterable
+from typing import Iterable, Mapping, Sequence
 
 from app.models import OpenLot
 from app.utils.decimal_utils import ZERO
@@ -102,3 +102,31 @@ def build_cost_basis_rows(open_lots: Iterable[OpenLot]) -> list[CostBasisRow]:
         )
     )
     return rows
+
+
+def apply_cost_basis_isin_exclusions(
+    rows: Sequence[CostBasisRow],
+    ignore_by_account_lower: Mapping[str, Iterable[str]],
+) -> list[CostBasisRow]:
+    """Drop cost-basis rows matching configured (portfolio, ISIN) pairs.
+
+    Keys in ``ignore_by_account_lower`` are ``input/<folder>/`` names in
+    lower case. Rules come from ``COSTBASIS_IGNORE_ISINS`` in ``.env``.
+  """
+
+    if not ignore_by_account_lower:
+        return list(rows)
+
+    blocked: dict[str, frozenset[str]] = {
+        account: frozenset(isin.upper() for isin in isins)
+        for account, isins in ignore_by_account_lower.items()
+    }
+
+    def is_blocked(row: CostBasisRow) -> bool:
+        isins = blocked.get(row.account_name.lower())
+        return bool(isins and row.isin.upper() in isins)
+
+    kept = [r for r in rows if not is_blocked(r)]
+    if len(kept) == len(rows):
+        return list(rows)
+    return kept

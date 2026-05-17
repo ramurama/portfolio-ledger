@@ -31,6 +31,7 @@ from app.cli.prompts import (
 from app.config import (
     DEFAULT_CURRENCY,
     INPUT_DIR,
+    COST_BASIS_ISIN_IGNORE_RULES,
     OPENFIGI_API_KEY,
     PORTFOLIO_LEDGER_ISIN_IGNORE_RULES,
 )
@@ -41,6 +42,7 @@ from app.services import (
     TaxLotEngine,
     apply_portfolio_isin_exclusions,
     build_combined_portfolio,
+    apply_cost_basis_isin_exclusions,
     build_cost_basis_rows,
     build_current_holdings,
     ingest_input_directory,
@@ -473,6 +475,16 @@ def generate_cost_basis(
     tax_lot_result = engine.process(ingestion.transactions)
 
     cost_basis = build_cost_basis_rows(tax_lot_result.open_lots)
+    n_before = len(cost_basis)
+    cost_basis = apply_cost_basis_isin_exclusions(
+        cost_basis,
+        COST_BASIS_ISIN_IGNORE_RULES,
+    )
+    if COST_BASIS_ISIN_IGNORE_RULES and len(cost_basis) < n_before:
+        typer.echo(
+            f"Excluded {n_before - len(cost_basis)} cost-basis lot(s) "
+            "per COSTBASIS_IGNORE_ISINS in .env.",
+        )
 
     payload = ReportPayload(
         cost_basis=cost_basis,
